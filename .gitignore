@@ -1,0 +1,25 @@
+# Build & Distribution Artifacts
+build/
+dist/
+*.class
+*.dex
+*.jar
+
+# macOS / Xcode / Swift Package Manager
+.DS_Store
+.build/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Android / Gradle / IDE
+.gradle/
+.idea/
+local.properties
+*.iml
+*.apk
+*.aab
+
+# Logs & Scratch
+*.log
+tmp/
