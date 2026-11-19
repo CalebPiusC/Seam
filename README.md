@@ -22,7 +22,8 @@
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white">
   <img alt="Java 17" src="https://img.shields.io/badge/Java-17%20(d8%20DEX)-ED8B00?style=flat-square&logo=openjdk&logoColor=white">
   <img alt="Linux UHID" src="https://img.shields.io/badge/Linux-%2Fdev%2Fuhid-FCC624?style=flat-square&logo=linux&logoColor=black">
-  <img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square">
+  <a href="CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -31,7 +32,8 @@
   <a href="#install">Install</a> •
   <a href="#technology-stack">Technology Stack</a> •
   <a href="#how-it-works">How It Works</a> •
-  <a href="#build-from-source">Build from Source</a>
+  <a href="#build-from-source">Build from Source</a> •
+  <a href="#contributing">Contributing</a>
 </p>
 
 </div>
@@ -271,6 +273,12 @@ make calibrate      # Verify 16-bit corner homing & velocity control calibration
 ```
 
 See [`research/README.md`](research/README.md) for deep technical specifications.
+
+---
+
+## Contributing
+
+SEAM is open to pull requests, bug reports, and hardware compatibility feedback (especially Windows host support and testing across Android OEMs). See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup steps, verification commands, and PR guidelines.
 
 ---
 
