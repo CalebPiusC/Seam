@@ -6,19 +6,13 @@
 
 <p align="center">
   <strong>One cursor. Every screen.</strong><br/>
-  Seamless, non-root mouse, keyboard, smooth scrolling, and clipboard sharing between <strong>macOS</strong> and <strong>Android</strong> — with <strong>Windows</strong> coming next.
+  Seamless, non-root mouse, keyboard, smooth scrolling, and clipboard sharing between <strong>macOS</strong> and <strong>Android</strong>, with <strong>Windows</strong> coming next.
 </p>
 
 <p align="center">
-  <a href="release/SEAM-macOS-arm64.dmg"><img src="assets/download-macos.svg" alt="Download for macOS • Includes Android Agent" height="58"></a>
+  <a href="https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg"><img src="assets/download-macos.svg" alt="Download for macOS • Includes Android Agent" height="58"></a>
   &nbsp;&nbsp;
   <a href="#roadmap"><img src="assets/windows-soon.svg" alt="Coming soon for Windows" height="58"></a>
-</p>
-
-<p align="center">
-  <a href="release/SEAM-macOS-arm64.dmg"><code>SEAM-macOS-arm64.dmg</code> (2.0 MB)</a> ·
-  <a href="release/SEAM-macOS-arm64.zip"><code>SEAM-macOS-arm64.zip</code> (1.7 MB)</a> ·
-  <a href="#install">Zero-APK Android Setup</a>
 </p>
 
 <p align="center">
@@ -72,30 +66,28 @@
 
 | | | |
 |:---:|:---:|:---:|
-| **Genuine Hardware Cursor**<br/>Drives Android's native `PointerController` via `/dev/uhid`—real hover highlights, cursor morphs, and zero mirroring | **Menu-Bar Native Design**<br/>Lives strictly in the macOS menu bar with Apple Liquid Glass (macOS 26+), SF Symbols, and San Francisco type | **Drag-to-Arrange**<br/>Hold and drag either **This Mac** or your **Phone** to snap left, right, top, or bottom |
-| **Auto-Pilot Dual Transport**<br/>Connects automatically over USB & Wi-Fi, switching seamlessly in `< 10 ms` without resetting the cursor | **120 Hz Smooth Scrolling**<br/>Injects fractional `MotionEvent.ACTION_SCROLL` deltas directly—no quantized `128 px` wheel jumps | **Universal Clipboard & Shortcuts**<br/>Bidirectional `NSPasteboard` ↔ Android clipboard sync plus native `Cmd+C`, `Cmd+V`, `Opt+Arrows`, and `Cmd+Arrows` |
-| **Zero Android App Needed**<br/>No APK to install or open—macOS auto-deploys a `32 KB` background DEX daemon via `app_process` | **Touch Keyboard Preserved**<br/>Enforces `show_ime_with_hard_keyboard=1` so Gboard and normal phone touch always stay active | **Zero-Trust Auth**<br/>Kernel `SO_PEERCRED` (`uid=2000`), mutual HMAC-SHA256 handshake, and signed 42-byte UDP motion datagrams |
+| **Genuine Hardware Cursor**<br/>Drives Android's native `PointerController` via `/dev/uhid` with real hover highlights, cursor morphs, and zero mirroring | **Menu-Bar Native Design**<br/>Lives strictly in the macOS menu bar with Apple Liquid Glass (macOS 26+), SF Symbols, and San Francisco type | **Drag-to-Arrange**<br/>Hold and drag either **This Mac** or your **Phone** to snap left, right, top, or bottom |
+| **Auto-Pilot Dual Transport**<br/>Connects automatically over USB & Wi-Fi, switching seamlessly in `< 10 ms` without resetting the cursor | **120 Hz Smooth Scrolling**<br/>Injects fractional `MotionEvent.ACTION_SCROLL` deltas directly with no quantized `128 px` wheel jumps | **Universal Clipboard & Shortcuts**<br/>Bidirectional `NSPasteboard` ↔ Android clipboard sync plus native `Cmd+C`, `Cmd+V`, `Opt+Arrows`, and `Cmd+Arrows` |
+| **Zero Android App Needed**<br/>No APK to install or open; macOS auto-deploys a `32 KB` background DEX daemon via `app_process` | **Touch Keyboard Preserved**<br/>Enforces `show_ime_with_hard_keyboard=1` so Gboard and normal phone touch always stay active | **Zero-Trust Auth**<br/>Kernel `SO_PEERCRED` (`uid=2000`), mutual HMAC-SHA256 handshake, and signed 42-byte UDP motion datagrams |
 
 ---
 
 ## Install
 
-> **Supported today:** **macOS (Apple Silicon, macOS 14+)** + **Android 11–15+ (non-root)**. Windows host support is planned next.
-
 ### 1. Mac Setup
-1. Download **[SEAM-macOS-arm64.dmg](release/SEAM-macOS-arm64.dmg)** (or **[SEAM-macOS-arm64.zip](release/SEAM-macOS-arm64.zip)**) from [`release/`](release).
+1. Download **[SEAM-macOS-arm64.dmg](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg)** (or **[SEAM-macOS-arm64.zip](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.zip)**) from the [latest GitHub Release](https://github.com/Ferousco-dev/Seam/releases/latest).
 2. Open the disk image and drag **SEAM** into **Applications**.
 3. On first launch, right-click **SEAM.app** → **Open** (builds are ad-hoc signed, not notarized with an Apple Developer ID).
 4. Look for the **laptop & iPhone** icon in your macOS menu bar.
 
-### 2. Android Setup (Automatic — Zero APK)
+### 2. Android Setup (Automatic, Zero APK)
 1. Enable **USB Debugging** (or **Wireless Debugging**) once under Android **Developer Options**.
-2. Plug your phone in for a moment (or connect via Wireless Debugging)—**SEAM Auto-Pilot** automatically pushes the `32 KB` `seam-agent.jar` agent, starts the `/dev/uhid` virtual mouse & keyboard, and attaches both **USB** and **Wi-Fi** links.
+2. Plug your phone in for a moment (or connect via Wireless Debugging). **SEAM Auto-Pilot** automatically pushes the `32 KB` `seam-agent.jar` agent, starts the `/dev/uhid` virtual mouse & keyboard, and attaches both **USB** and **Wi-Fi** links.
 3. Unplug anytime: the background daemon keeps Wi-Fi (`TCP/UDP 27186`) ready for cable-free reconnection.
 4. *(Optional)* Grant **SEAM** permission in **System Settings → Privacy & Security → Accessibility** to enable global `CGEventTap` capture alongside the built-in non-activating panel fallback.
 
 ### Controls & Shortcuts
-- **Edge Crossing:** Move your pointer past the side where you positioned your phone—just drag either tile inside the menu-bar popover to match your desk.
+- **Edge Crossing:** Move your pointer past the side where you positioned your phone. Drag either tile inside the menu-bar popover to match your desk.
 - **Mac-Style Editing on Android:** `Cmd+C` / `Cmd+V` / `Cmd+X` / `Cmd+A` / `Cmd+Z`, `Cmd+Left/Right` (line start/end), `Cmd+Up/Down` (document top/bottom), `Opt+Left/Right` (word jump), `Opt+Backspace` (delete word).
 - **Emergency Return to Mac:** **`Ctrl + Option + Q`** or **`Ctrl + Option + Cmd + Esc`**.
 
@@ -121,7 +113,7 @@
 
 ```mermaid
 flowchart LR
-    subgraph macOS["macOS Host (SEAM.app — Menu Bar)"]
+    subgraph macOS["macOS Host (SEAM.app, Menu Bar)"]
         Input["Mouse / Trackpad / Keyboard"] --> Quartz["QuartzEdgeEngine<br/>(CGEventTap / CaptureShieldPanel)"]
         ClipMac["MacClipboardSyncEngine<br/>(NSPasteboard)"] --> Mux["SeamTransportMultiplexer"]
         Quartz -->|"Deltas, Shortcuts, Hi-Res Scroll"| Mux
@@ -133,7 +125,7 @@ flowchart LR
         Mux <==>|"WifiHybridTransport (TCP + 42B UDP)"| Coord
     end
 
-    subgraph Android["Android Background Agent (seam_agent — uid=2000)"]
+    subgraph Android["Android Background Agent (seam_agent, uid=2000)"]
         Coord <--> Engine["SeamInputEngine"]
         Engine -->|"UHID_INPUT2 (Pointer & Keys)"| UHID["/dev/uhid → InputReader → PointerController"]
         Engine -->|"1/32-notch ACTION_SCROLL"| Smooth["SmoothScrollInjector (InputManagerGlobal)"]
@@ -222,7 +214,7 @@ See [`research/README.md`](research/README.md) for deep technical specifications
 
 | Platform | Status | Notes |
 |---|---|---|
-| **macOS Host (`macOS 14+`, Apple Silicon)** | ✅ Available | Liquid Glass menu-bar app, drag arrangement, smooth scroll, clipboard sync ([download](release/SEAM-macOS-arm64.dmg)) |
+| **macOS Host (`macOS 14+`, Apple Silicon)** | ✅ Available | Liquid Glass menu-bar app, drag arrangement, smooth scroll, clipboard sync ([download](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg)) |
 | **Android Client (`Android 11–15+`, Non-Root)** | ✅ Available | Zero-APK `/dev/uhid` agent auto-deployed from `SEAM.app` |
 | **Windows Host (`Windows 11`)** | 🚧 Coming Soon | Native Windows cursor capture, edge crossing & `SEAM-Wire v1` transport client |
 | **Multi-Device Canvas** | 📋 Planned | Support more than two arranged screens across Mac, Windows, and Android |
