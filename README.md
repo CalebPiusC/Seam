@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg"><img src="assets/download-macos.svg" alt="Download for macOS • Includes Android Agent" height="58"></a>
   &nbsp;&nbsp;
-  <a href="#roadmap"><img src="assets/windows-soon.svg" alt="Coming soon for Windows" height="58"></a>
+  <img src="assets/windows-soon.svg" alt="Coming soon for Windows" height="58">
 </p>
 
 <p align="center">
@@ -26,16 +26,24 @@
 </p>
 
 <p align="center">
+  <a href="#what-is-seam">What is SEAM</a> •
   <a href="#preview">Preview</a> •
   <a href="#at-a-glance">At a Glance</a> •
   <a href="#install">Install</a> •
   <a href="#technology-stack">Technology Stack</a> •
   <a href="#how-it-works">How It Works</a> •
-  <a href="#build-from-source">Build from Source</a> •
-  <a href="#roadmap">Roadmap</a>
+  <a href="#build-from-source">Build from Source</a>
 </p>
 
 </div>
+
+---
+
+## What is SEAM?
+
+**SEAM** brings an Apple Universal Control experience to **macOS and Android** (with Windows support coming next).
+
+Move your Mac cursor past the edge of your display and it flows directly onto your Android phone sitting beside your laptop. Unlike screen-mirroring tools (`scrcpy`) that trap your pointer inside a desktop video window, or accessibility-based apps that draw fake overlay cursors, SEAM registers real virtual hardware HID devices in Android's Linux kernel (`/dev/uhid`) without root. You get Android's genuine native hardware pointer, 120 Hz smooth trackpad scrolling, Mac keyboard shortcuts (`Cmd+C`, `Cmd+V`, `Opt+Arrows`, `Cmd+Arrows`), and automatic bidirectional clipboard sync over USB or Wi-Fi, all from a single macOS menu-bar icon with no Android app to install.
 
 ---
 
@@ -207,17 +215,6 @@ make calibrate      # Verify 16-bit corner homing & velocity control calibration
 ```
 
 See [`research/README.md`](research/README.md) for deep technical specifications.
-
----
-
-## Roadmap
-
-| Platform | Status | Notes |
-|---|---|---|
-| **macOS Host (`macOS 14+`, Apple Silicon)** | ✅ Available | Liquid Glass menu-bar app, drag arrangement, smooth scroll, clipboard sync ([download](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg)) |
-| **Android Client (`Android 11–15+`, Non-Root)** | ✅ Available | Zero-APK `/dev/uhid` agent auto-deployed from `SEAM.app` |
-| **Windows Host (`Windows 11`)** | 🚧 Coming Soon | Native Windows cursor capture, edge crossing & `SEAM-Wire v1` transport client |
-| **Multi-Device Canvas** | 📋 Planned | Support more than two arranged screens across Mac, Windows, and Android |
 
 ---
 
