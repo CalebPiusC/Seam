@@ -276,4 +276,4 @@ See [`research/README.md`](research/README.md) for deep technical specifications
 
 ## License
 
-Distributed under the **MIT License**.
+Distributed under the **[MIT License](LICENSE)**.
