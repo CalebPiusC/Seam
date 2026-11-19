@@ -28,7 +28,6 @@
 <p align="center">
   <a href="#what-is-seam">What is SEAM</a> •
   <a href="#preview">Preview</a> •
-  <a href="#at-a-glance">At a Glance</a> •
   <a href="#install">Install</a> •
   <a href="#technology-stack">Technology Stack</a> •
   <a href="#how-it-works">How It Works</a> •
@@ -67,16 +66,6 @@ Move your Mac cursor past the edge of your display and it flows directly onto yo
   <br/>
   <video src="assets/seam-demo.mp4" width="520" controls autoplay loop muted playsinline></video>
 </div>
-
----
-
-## At a Glance
-
-| | | |
-|:---:|:---:|:---:|
-| **Genuine Hardware Cursor**<br/>Drives Android's native `PointerController` via `/dev/uhid` with real hover highlights, cursor morphs, and zero mirroring | **Menu-Bar Native Design**<br/>Lives strictly in the macOS menu bar with Apple Liquid Glass (macOS 26+), SF Symbols, and San Francisco type | **Drag-to-Arrange**<br/>Hold and drag either **This Mac** or your **Phone** to snap left, right, top, or bottom |
-| **Auto-Pilot Dual Transport**<br/>Connects automatically over USB & Wi-Fi, switching seamlessly in `< 10 ms` without resetting the cursor | **120 Hz Smooth Scrolling**<br/>Injects fractional `MotionEvent.ACTION_SCROLL` deltas directly with no quantized `128 px` wheel jumps | **Universal Clipboard & Shortcuts**<br/>Bidirectional `NSPasteboard` ↔ Android clipboard sync plus native `Cmd+C`, `Cmd+V`, `Opt+Arrows`, and `Cmd+Arrows` |
-| **Zero Android App Needed**<br/>No APK to install or open; macOS auto-deploys a `32 KB` background DEX daemon via `app_process` | **Touch Keyboard Preserved**<br/>Enforces `show_ime_with_hard_keyboard=1` so Gboard and normal phone touch always stay active | **Zero-Trust Auth**<br/>Kernel `SO_PEERCRED` (`uid=2000`), mutual HMAC-SHA256 handshake, and signed 42-byte UDP motion datagrams |
 
 ---
 
@@ -119,26 +108,93 @@ Move your Mac cursor past the edge of your display and it flows directly onto yo
 
 ## How It Works
 
+### System Architecture
+
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph macOS["macOS Host (SEAM.app, Menu Bar)"]
-        Input["Mouse / Trackpad / Keyboard"] --> Quartz["QuartzEdgeEngine<br/>(CGEventTap / CaptureShieldPanel)"]
-        ClipMac["MacClipboardSyncEngine<br/>(NSPasteboard)"] --> Mux["SeamTransportMultiplexer"]
-        Quartz -->|"Deltas, Shortcuts, Hi-Res Scroll"| Mux
-        Popover["SeamPopoverView (Liquid Glass)<br/>& Drag ArrangementView"] --> Quartz
+        direction LR
+        UI["SeamMenuBarController & ArrangementView<br/>(Liquid Glass Popover, Drag-to-Arrange)"]
+        HID["Physical Trackpad, Mouse & Keyboard"]
+        Quartz["QuartzEdgeEngine<br/>(CGEventTap / CaptureShieldPanel)"]
+        CursorCtrl["BackgroundCursorController<br/>(Decouple & Hide Mac Cursor)"]
+        KeyMap["MacKeycodeTranslator<br/>(Cmd->Ctrl, Opt/Cmd Navigation)"]
+        ClipMac["MacClipboardSyncEngine<br/>(NSPasteboard Watcher)"]
+        Mux["SeamTransportMultiplexer<br/>(CryptoKit HMAC-SHA256 & Auto-Failover)"]
+
+        UI -->|"Edge Position"| Quartz
+        HID --> Quartz
+        Quartz --> CursorCtrl
+        Quartz --> KeyMap
+        Quartz -->|"Hi-Res Scroll & Pointer Deltas"| Mux
+        KeyMap -->|"6KRO HID Key Reports"| Mux
+        ClipMac <-->|"OP_CLIPBOARD_SET / EVENT"| Mux
     end
 
     subgraph Transport["Dual Authenticated Transport (SEAM-Wire v1)"]
-        Mux <==>|"UsbAdbTransport (ADB Socket)"| Coord["DualTransportCoordinator"]
-        Mux <==>|"WifiHybridTransport (TCP + 42B UDP)"| Coord
+        direction LR
+        USB["UsbAdbTransport<br/>ADB localabstract:seam_uhid<br/>SO_PEERCRED uid=2000 + HMAC-SHA256"]
+        WIFI["WifiHybridTransport<br/>TCP Control (Port 27186)<br/>+ 42B Signed UDP Fast-Path"]
     end
 
-    subgraph Android["Android Background Agent (seam_agent, uid=2000)"]
-        Coord <--> Engine["SeamInputEngine"]
-        Engine -->|"UHID_INPUT2 (Pointer & Keys)"| UHID["/dev/uhid → InputReader → PointerController"]
-        Engine -->|"1/32-notch ACTION_SCROLL"| Smooth["SmoothScrollInjector (InputManagerGlobal)"]
-        Engine <-->|"IClipboard Binder + Timestamp Check"| ClipAnd["AndroidClipboardController"]
+    Mux <==>|"Primary / Hot Standby"| USB
+    Mux <==>|"Primary / Hot Standby (< 10 ms Failover)"| WIFI
+
+    subgraph Android["Android Background Agent (seam_agent, Zero-APK uid=2000)"]
+        direction LR
+        Coord["DualTransportCoordinator<br/>(UsbLocalSocketServer + WifiTransportServer)"]
+        Engine["SeamInputEngine<br/>(Curve Velocity Shadow Tracker & Edge Return)"]
+        UHID["Linux /dev/uhid<br/>(16-bit Relative Mouse + 6KRO Keyboard)"]
+        AOSP["AOSP InputReader & PointerController<br/>(Native Hardware Cursor Sprite)"]
+        Scroll["SmoothScrollInjector<br/>(InputManagerGlobal 120 Hz ACTION_SCROLL)"]
+        ClipAnd["AndroidClipboardController<br/>(IClipboard Binder + Silent Timestamp Check)"]
+        Display["DisplayTelemetry<br/>(DisplayManagerGlobal Metrics & Rotation)"]
+
+        Coord <--> Engine
+        Engine -->|"UHID_INPUT2"| UHID
+        UHID --> AOSP
+        Engine -->|"1/32-Notch Fractional Scroll"| Scroll
+        Engine <-->|"Bidirectional Sync"| ClipAnd
+        Display --> Engine
     end
+
+    USB <==>|"Encrypted Stream"| Coord
+    WIFI <==>|"Encrypted TCP + Signed UDP"| Coord
+```
+
+### What Happens When Your Cursor Crosses Over
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Mac as macOS Host (SEAM.app)
+    participant Link as USB / Wi-Fi (SEAM-Wire v1)
+    participant Phone as Android Agent (seam_agent)
+    participant OS as Android Kernel & System
+
+    Mac->>Link: Mutual HMAC-SHA256 Handshake
+    Link->>Phone: Authenticate Session (USB + Wi-Fi Standby)
+    Phone-->>Mac: OP_DISPLAY_INFO (Resolution, DPI, Rotation)
+
+    Note over Mac,Phone: You move your pointer past the configured Mac screen edge
+    Mac->>Mac: Decouple & hide Mac cursor (no warp bounce)
+    Mac->>Link: OP_CURSOR_ENTER + OP_CLIPBOARD_SET (sync Mac clipboard)
+    Link->>Phone: Home pointer & update Android IClipboard
+    Phone->>OS: /dev/uhid mouse report + IClipboard.setPrimaryClip
+
+    loop Active Control on Android (120 Hz)
+        Mac->>Link: Mouse Deltas & 1/32-Notch Scroll (42B Signed UDP / USB)
+        Link->>Phone: Deliver Input Frame
+        Phone->>OS: /dev/uhid Pointer Sprite + SmoothScrollInjector ACTION_SCROLL
+        Mac->>Link: Keyboard Shortcuts (Cmd+C / Cmd+V -> Ctrl+C / Ctrl+V)
+        Phone->>OS: /dev/uhid 6KRO Key Report
+    end
+
+    Note over Phone,OS: Copy on Android or push pointer back to the return bezel
+    OS-->>Phone: IOnPrimaryClipChangedListener -> OP_CLIPBOARD_EVENT
+    Phone-->>Mac: Sync copied text to NSPasteboard
+    Phone-->>Mac: OP_EDGE_RETURN (exit Y ratio)
+    Mac->>Mac: Restore & show Mac cursor at matching edge height
 ```
 
 ### Repository Structure
