@@ -58,6 +58,20 @@ If you would rather bundle them, run the workflow with `bundle_adb = true`.
 **`seam-agent.jar` *is* bundled,** because it is compiled from this repository's own MIT-licensed
 `android-agent/` sources by the same workflow (the macOS app bundle embeds it the same way).
 
+### Current verified build
+
+| | |
+|---|---|
+| Run | [44729623831](https://github.com/CalebPiusC/Seam/actions/runs/44729623831) — every step green, 1 m 35 s, no warnings |
+| Artifact | `SEAM-Windows-x64.zip` — **30,005,433 bytes** (28.6 MiB) |
+| SHA-256 | `6c617bcf457f2b7bd22d8d214a3ee04f6a65f6aa07ed1312c3d54f3837be2003` |
+| `seam-host.exe` | 35,131,091 bytes — self-contained single file, .NET 8 win-x64 |
+| `seam-agent.jar` | 32,148 bytes — same size class as the jar the macOS build produces |
+| Verified by CI | ZIP expands, contains exactly the 8 expected files, and the **binary extracted from the ZIP passes `--self-test`** |
+
+Sizes shift slightly between runs (embedding timestamps), so treat these as the record for that run
+rather than constants; every ZIP carries its own `BUILD-INFO.txt`.
+
 ---
 
 
@@ -71,7 +85,7 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | | State |
 |---|---|
 | Protocol / auth / framing design | **Verified by execution** — 33 conformance checks pass (`tools/verify_protocol.py`) against a device-side simulator transliterated from the shipped Java |
-| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), clean, 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44728342098)) |
+| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), clean, 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44729623831)) |
 | `--self-test` | **Passes** — on the build output *and* on the published single-file exe, exit code 0 |
 | Packaging | **Produced** — self-contained single-file `win-x64`, `SEAM-Windows-x64.zip`, downloaded from the run's Artifacts |
 | Windows low-level hooks, `ClipCursor`, DPI | **Never executed** on interactive Windows — CI runs on a headless runner with no pointer |
