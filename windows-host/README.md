@@ -25,7 +25,9 @@ What the workflow actually does, in order, and fails on the first broken step:
 dotnet restore  →  dotnet build -c Release  →  seam-host.exe --self-test
    →  javac + d8 (builds seam-agent.jar from android-agent/ sources)
    →  dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true
-   →  published seam-host.exe --self-test  →  zip  →  upload artifact
+   →  published seam-host.exe --self-test
+   →  zip  →  unzip it again and self-test the binary *inside the ZIP*
+   →  upload artifact
 ```
 
 Inside the ZIP:

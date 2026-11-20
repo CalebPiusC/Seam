@@ -256,6 +256,9 @@ jobs:
             "seam-host.exe  : $((Get-FileHash (Join-Path $root 'seam-host.exe')  -Algorithm SHA256).Hash)"
             "seam-agent.jar : $((Get-FileHash (Join-Path $root 'seam-agent.jar') -Algorithm SHA256).Hash)"
             ""
+            "file sizes (bytes):"
+            (Get-ChildItem $root -File | ForEach-Object { "  {0,-26} {1,10:N0}" -f $_.Name, $_.Length })
+            ""
             "Built from source by .github/workflows/windows-build.yml."
             "Nothing in this ZIP has been validated on physical Windows hardware or a physical phone"
             "by the build itself: see README-WINDOWS.txt for what to test first."
@@ -275,6 +278,47 @@ jobs:
           Write-Host "`n--- ZIP contents ---"
           Get-ChildItem $root -Recurse -File |
             ForEach-Object { "{0,10:N0}  {1}" -f $_.Length, $_.FullName.Substring((Resolve-Path build\staging).Path.Length + 1) }
+
+      # Strongest check available without a phone: unzip exactly what the user will download,
+      # confirm the expected layout, and run the packaged binary's self-test from the extracted
+      # folder. A malformed ZIP, a missing asset or a broken publish cannot get past this.
+      - name: Verify the packaged ZIP (unzip + self-test from the extracted copy)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verify = 'build\verify'
+          Remove-Item -Recurse -Force $verify -ErrorAction SilentlyContinue
+          Expand-Archive -Path build\SEAM-Windows-x64.zip -DestinationPath $verify -Force
+
+          $root = Join-Path $verify 'SEAM-Windows-x64'
+          if (-not (Test-Path $root)) { throw "ZIP does not contain the SEAM-Windows-x64\ folder" }
+
+          $expected = @(
+            'seam-host.exe', 'seam-agent.jar', 'Get-Adb.ps1', 'ADD-ADB-HERE.txt',
+            'README-WINDOWS.txt', 'THIRD-PARTY-NOTICES.md', 'BUILD-INFO.txt', 'LICENSE'
+          )
+          $present = Get-ChildItem $root -Recurse -File | ForEach-Object { $_.FullName.Substring($root.Length + 1) }
+          foreach ($f in $expected) {
+            if ($present -notcontains $f) { throw "ZIP is missing $f" }
+          }
+          Write-Host "ZIP contains all $($expected.Count) expected entries:"
+          Get-ChildItem $root -Recurse -File | ForEach-Object { "  {0,10:N0}  {1}" -f $_.Length, $_.Name }
+
+          Write-Host "`nrunning the packaged binary from the extracted folder..."
+          & (Join-Path $root 'seam-host.exe') --self-test
+          $code = $LASTEXITCODE
+          Write-Host "packaged-binary self-test exit code: $code"
+          if ($code -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $code)" }
+
+          # Record the manifest in the run summary so the layout is visible without the log.
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "### ZIP manifest (verified by expanding the artifact)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "| file | bytes |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "|---|---|" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Get-ChildItem $root -Recurse -File |
+            ForEach-Object { "| ``$($_.Name)`` | $($_.Length) |" } |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
