@@ -30,6 +30,21 @@ namespace Seam.WindowsHost.Gui
     internal sealed class LogView : ListBox
     {
         private int _maxEntries = 500;
+        private bool _followTail = true;
+
+        /// <summary>When true (the default) new lines scroll the view to the newest entry.</summary>
+        public bool FollowTail
+        {
+            get => _followTail;
+            set
+            {
+                _followTail = value;
+                if (value)
+                {
+                    ScrollToEnd();
+                }
+            }
+        }
 
         public LogView()
         {
@@ -62,6 +77,19 @@ namespace Seam.WindowsHost.Gui
             while (Items.Count > _maxEntries)
             {
                 Items.RemoveAt(0);
+            }
+
+            if (_followTail)
+            {
+                ScrollToEnd();
+            }
+        }
+
+        private void ScrollToEnd()
+        {
+            if (Items.Count == 0 || IsDisposed)
+            {
+                return;
             }
 
             TopIndex = Math.Max(0, Items.Count - (ClientSize.Height / Math.Max(1, ItemHeight)) + 1);

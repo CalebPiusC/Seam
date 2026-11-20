@@ -716,8 +716,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: SEAM-ui-preview
-          path: build/ui-preview.png
-          archive: false
+          path: build/ui-preview*.png
           if-no-files-found: warn
           retention-days: ${{ inputs.retention_days || 30 }}
 

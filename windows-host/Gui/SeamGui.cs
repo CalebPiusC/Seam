@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
@@ -82,12 +83,22 @@ namespace Seam.WindowsHost.Gui
                     Application.DoEvents();
 
                     stage = Stage("rendering (PNG encode)");
-                    using var bitmap = new Bitmap(form.Width, form.Height, PixelFormat.Format32bppArgb);
-                    form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
-                    bitmap.Save(screenshotPath!, ImageFormat.Png);
+                    CapturePage(form, screenshotPath!, GuiPage.Home);
+                    CapturePage(form, PagePath(screenshotPath!, "activity"), GuiPage.Activity);
+                    CapturePage(form, PagePath(screenshotPath!, "settings"), GuiPage.Settings);
 
+                    // Diagnostics builds its report on a worker; give it a moment so the capture
+                    // shows the real text instead of the "Collecting information..." placeholder.
+                    form.ShowPage(GuiPage.Diagnostics);
+                    for (int i = 0; i < 40; i++)
+                    {
+                        Application.DoEvents();
+                        Thread.Sleep(50);
+                    }
+                    CapturePage(form, PagePath(screenshotPath!, "diagnostics"), GuiPage.Diagnostics);
+
+                    form.ShowPage(GuiPage.Home);
                     form.Hide();
-                    Console.WriteLine($"UI screenshot written: {screenshotPath} ({bitmap.Width}x{bitmap.Height})");
                 }
 
                 stage = "complete";
@@ -99,6 +110,31 @@ namespace Seam.WindowsHost.Gui
                 ReportSmokeFailure(stage, ex);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// Renders one page of the real window to a PNG. Used by CI so the reviewed images are
+        /// the application itself, not a mockup.
+        /// </summary>
+        private static void CapturePage(MainForm form, string path, GuiPage page)
+        {
+            form.ShowPage(page);
+            Application.DoEvents();
+            Thread.Sleep(120);
+            Application.DoEvents();
+
+            using var bitmap = new Bitmap(form.Width, form.Height, PixelFormat.Format32bppArgb);
+            form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+            bitmap.Save(path, ImageFormat.Png);
+            Console.WriteLine($"UI screenshot written: {path} ({bitmap.Width}x{bitmap.Height}, page {page})");
+        }
+
+        /// <summary>Builds "ui-preview-activity.png" next to "ui-preview.png".</summary>
+        private static string PagePath(string basePath, string suffix)
+        {
+            string directory = Path.GetDirectoryName(basePath) ?? ".";
+            string name = Path.GetFileNameWithoutExtension(basePath);
+            return Path.Combine(directory, name + "-" + suffix + ".png");
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -7,46 +8,81 @@ namespace Seam.WindowsHost.Gui
 {
     /// <summary>
     /// Colours, fonts and small drawing helpers. One place for the visual language so the
-    /// window, the dialogs and the custom controls cannot drift apart.
+    /// window, the pages and the custom controls cannot drift apart.
+    ///
+    /// The palette is the SEAM graphite identity taken from the macOS app icon
+    /// (a <c>#292A2E → #09090B</c> gradient): a dark workspace, a small ramp of surface
+    /// levels, one restrained blue for "the pointer is here" states, and green/amber/red
+    /// only where they mean connected / attention / failure.
     /// </summary>
     internal static class Theme
     {
-        // ---- surfaces ----
-        public static readonly Color Background = Color.FromArgb(0xF3, 0xF3, 0xF3);
-        public static readonly Color Surface = Color.White;
-        public static readonly Color SurfaceMuted = Color.FromArgb(0xFA, 0xFA, 0xFA);
-        public static readonly Color Border = Color.FromArgb(0xE3, 0xE3, 0xE3);
-        public static readonly Color BorderStrong = Color.FromArgb(0xD0, 0xD0, 0xD0);
+        // ---- surfaces: four steps of graphite, each one clearly lighter than the last ----
+        public static readonly Color Background = Color.FromArgb(0x16, 0x17, 0x1A);
+        public static readonly Color NavBackground = Color.FromArgb(0x11, 0x12, 0x15);
+        public static readonly Color Surface = Color.FromArgb(0x1E, 0x1F, 0x24);
+        public static readonly Color SurfaceMuted = Color.FromArgb(0x23, 0x25, 0x2A);
+        public static readonly Color SurfaceRaised = Color.FromArgb(0x27, 0x29, 0x2F);
+        public static readonly Color Border = Color.FromArgb(0x2C, 0x2E, 0x35);
+        public static readonly Color BorderStrong = Color.FromArgb(0x3A, 0x3D, 0x46);
 
         // ---- text ----
-        public static readonly Color TextPrimary = Color.FromArgb(0x1B, 0x1B, 0x1B);
-        public static readonly Color TextSecondary = Color.FromArgb(0x5D, 0x5D, 0x5D);
-        public static readonly Color TextTertiary = Color.FromArgb(0x86, 0x86, 0x86);
+        public static readonly Color TextPrimary = Color.FromArgb(0xF3, 0xF4, 0xF6);
+        public static readonly Color TextSecondary = Color.FromArgb(0xA6, 0xAB, 0xB5);
+        public static readonly Color TextTertiary = Color.FromArgb(0x7A, 0x7F, 0x8A);
 
-        // ---- accent ----
-        public static readonly Color Accent = Color.FromArgb(0x0F, 0x6C, 0xBD);
-        public static readonly Color AccentHover = Color.FromArgb(0x11, 0x5E, 0xA3);
-        public static readonly Color AccentPressed = Color.FromArgb(0x0C, 0x3E, 0x6E);
-        public static readonly Color AccentSoft = Color.FromArgb(0xE7, 0xF1, 0xFB);
+        // ---- accent: one blue, used for selection and for the device that owns the cursor ----
+        public static readonly Color Accent = Color.FromArgb(0x4C, 0x8D, 0xFF);
+        public static readonly Color AccentHover = Color.FromArgb(0x6A, 0xA0, 0xFF);
+        public static readonly Color AccentPressed = Color.FromArgb(0x3B, 0x79, 0xE3);
+        public static readonly Color AccentSoft = Color.FromArgb(0x1C, 0x29, 0x42);
+        public static readonly Color AccentOnDark = Color.FromArgb(0x0A, 0x14, 0x24);
 
         // ---- status ----
-        public static readonly Color StatusConnected = Color.FromArgb(0x0F, 0x7B, 0x0F);
-        public static readonly Color StatusConnectedSoft = Color.FromArgb(0xDF, 0xF6, 0xDD);
-        public static readonly Color StatusBusy = Color.FromArgb(0x9D, 0x5D, 0x00);
-        public static readonly Color StatusBusySoft = Color.FromArgb(0xFF, 0xF4, 0xCE);
-        public static readonly Color StatusError = Color.FromArgb(0xC4, 0x2B, 0x1C);
-        public static readonly Color StatusErrorSoft = Color.FromArgb(0xFD, 0xE7, 0xE9);
-        public static readonly Color StatusIdle = Color.FromArgb(0x6B, 0x6B, 0x6B);
-        public static readonly Color StatusIdleSoft = Color.FromArgb(0xEE, 0xEE, 0xEE);
+        public static readonly Color StatusConnected = Color.FromArgb(0x46, 0xB8, 0x5B);
+        public static readonly Color StatusConnectedSoft = Color.FromArgb(0x16, 0x30, 0x1E);
+        public static readonly Color StatusBusy = Color.FromArgb(0xD8, 0xA0, 0x2A);
+        public static readonly Color StatusBusySoft = Color.FromArgb(0x32, 0x28, 0x0F);
+        public static readonly Color StatusError = Color.FromArgb(0xF0, 0x63, 0x5B);
+        public static readonly Color StatusErrorSoft = Color.FromArgb(0x38, 0x20, 0x1E);
+        public static readonly Color StatusIdle = Color.FromArgb(0x8A, 0x8F, 0x99);
+        public static readonly Color StatusIdleSoft = Color.FromArgb(0x23, 0x25, 0x29);
 
-        // ---- fonts (created once, live for the process) ----
-        public static readonly Font Body = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font BodyStrong = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font Small = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point);
-        public static readonly Font Section = new Font("Segoe UI", 8F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font Heading = new Font("Segoe UI", 12.5F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font Title = new Font("Segoe UI", 15F, FontStyle.Bold, GraphicsUnit.Point);
-        public static readonly Font Mono = new Font("Consolas", 8.75F, FontStyle.Regular, GraphicsUnit.Point);
+        // ---- typography: Segoe UI Variable where the OS has it, Segoe UI otherwise ----
+        public static readonly string TextFamily = PickFamily("Segoe UI Variable Text", "Segoe UI");
+        public static readonly string DisplayFamily = PickFamily("Segoe UI Variable Display", TextFamily);
+        public static readonly string GlyphFamily = PickFamily("Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol");
+
+        public static readonly Font Body = new(TextFamily, 9.75F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font BodyStrong = new(TextFamily, 9.75F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font Small = new(TextFamily, 9F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font Caption = new(TextFamily, 8.25F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font Section = new(TextFamily, 8F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font Heading = new(DisplayFamily, 12F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font PageTitle = new(DisplayFamily, 18F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font Title = new(DisplayFamily, 15F, FontStyle.Bold, GraphicsUnit.Point);
+        public static readonly Font Mono = new("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        public static readonly Font Glyphs = new(GlyphFamily, 11F, FontStyle.Regular, GraphicsUnit.Point);
+
+        /// <summary>Returns the first installed family from <paramref name="candidates"/>.</summary>
+        private static string PickFamily(params string[] candidates)
+        {
+            var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (FontFamily family in FontFamily.Families)
+            {
+                installed.Add(family.Name);
+            }
+
+            foreach (string candidate in candidates)
+            {
+                if (installed.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return "Segoe UI";
+        }
 
         /// <summary>Rounded rectangle path; radius is clamped so tiny controls still render.</summary>
         public static GraphicsPath RoundedRect(Rectangle bounds, int radius)
@@ -93,6 +129,14 @@ namespace Seam.WindowsHost.Gui
                 BackColor = Color.Transparent
             };
         }
+
+        /// <summary>Small all-caps section label used at the top of every card.</summary>
+        public static Label SectionLabel(string text)
+        {
+            Label label = MakeLabel(text, Section, TextTertiary, ContentAlignment.MiddleLeft);
+            label.Dock = DockStyle.Fill;
+            return label;
+        }
     }
 
     /// <summary>Panel with double buffering on, so custom painting does not flicker.</summary>
@@ -108,9 +152,9 @@ namespace Seam.WindowsHost.Gui
     }
 
     /// <summary>
-    /// A content card: white surface, 1px border, transparent-inheriting children.
-    /// Square corners on purpose - rounded corners on a container whose children are square
-    /// WinForms controls would show grey wedges, which looks worse than a clean rectangle.
+    /// A content card: one surface level above the page, a 1px border, and a soft 8px corner.
+    /// Children that paint their own background use the same colour as the card, so the
+    /// corners stay clean without clipping every child control.
     /// </summary>
     internal sealed class CardPanel : BufferedPanel
     {
@@ -123,8 +167,8 @@ namespace Seam.WindowsHost.Gui
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            using var pen = new Pen(Theme.Border, 1f);
-            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            Rectangle bounds = new(0, 0, Width - 1, Height - 1);
+            Theme.FillRounded(e.Graphics, bounds, 8, Theme.Surface, Theme.Border);
         }
     }
 }

@@ -132,7 +132,7 @@ namespace Seam.WindowsHost.Gui
             }
             else
             {
-                fill = _pressed ? Color.FromArgb(0xEF, 0xEF, 0xEF) : _hover ? Theme.SurfaceMuted : Theme.Surface;
+                fill = _pressed ? Theme.SurfaceRaised : _hover ? Theme.SurfaceMuted : Theme.Surface;
                 border = Theme.BorderStrong;
                 text = Theme.TextPrimary;
             }
