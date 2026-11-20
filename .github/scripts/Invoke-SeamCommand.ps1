@@ -47,10 +47,31 @@ function Invoke-SeamCommand {
 
     if ($process.ExitCode -ne 0) {
         # Surface the real reason as an annotation: reading the job log is not always possible.
-        $tail = (($stderr + "`n" + $stdout) -split "`n" |
-                 Where-Object { $_ -match '\S' } |
-                 Select-Object -Last 4) -join ' | '
-        Write-Host "::error title=$([System.IO.Path]::GetFileName($Path)) exit $($process.ExitCode)::$tail"
+        #
+        # Take the command's own words first (stderr when it wrote any), and keep the HEAD as
+        # well as the tail. A fixed "last N lines" window used to drop the head, which is where
+        # .NET puts the exception type, the message and the innermost stack frames, and kept the
+        # outer frames that say the least about the cause.
+        $source = if ($stderr -match '\S') { $stderr } else { $stdout }
+        $lines = @($source -split "`n" |
+                   ForEach-Object { $_.TrimEnd() } |
+                   Where-Object { $_ -match '\S' })
+        if ($lines.Count -eq 0) { $lines = @('(the command exited without writing anything)') }
+
+        if ($lines.Count -le 20) {
+            $pick = $lines
+        } else {
+            $omitted = $lines.Count - 18
+            $pick = @($lines[0..13]) +
+                    @("... $omitted line(s) omitted, see this step's log for everything ...") +
+                    @($lines[-4..-1])
+        }
+
+        # A workflow command is one line: percent-encode '%', CR and LF.
+        $message = (($pick -join "`n") -replace '%', '%25') -replace "`r", ''
+        $message = $message -replace "`n", '%0A'
+
+        Write-Host "::error title=$([System.IO.Path]::GetFileName($Path)) exit $($process.ExitCode)::$message"
     }
 
     return [pscustomobject]@{

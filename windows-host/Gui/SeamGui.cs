@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 using Seam.WindowsHost.Host;
@@ -47,32 +48,40 @@ namespace Seam.WindowsHost.Gui
         /// </summary>
         public static int RunSmoke(string? screenshotPath)
         {
+            string stage = "startup";
+
             try
             {
                 Configure();
+
+                stage = Stage("construction");   // every control is created here
                 using var form = new MainForm(UiSettings.Load(), interactive: false);
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(0, 0);
 
-                _ = form.Handle;          // create the native window
+                stage = Stage("layout");         // native window + a forced layout pass
+                _ = form.Handle;                 // create the native window
                 form.CreateControl();
                 form.PerformLayout();
                 Application.DoEvents();
 
+                stage = Stage("control-count");
                 int controls = CountControls(form);
                 if (controls < 20)
                 {
-                    Console.Error.WriteLine($"UI smoke test FAILED: only {controls} controls were created.");
+                    Console.Error.WriteLine($"UI smoke test FAILED during {stage}: only {controls} controls were created (expected at least 20).");
                     return 2;
                 }
 
                 if (!string.IsNullOrEmpty(screenshotPath))
                 {
+                    stage = Stage("rendering (Show + DrawToBitmap)");
                     form.Show();
                     Application.DoEvents();
                     Thread.Sleep(300);
                     Application.DoEvents();
 
+                    stage = Stage("rendering (PNG encode)");
                     using var bitmap = new Bitmap(form.Width, form.Height, PixelFormat.Format32bppArgb);
                     form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
                     bitmap.Save(screenshotPath!, ImageFormat.Png);
@@ -81,14 +90,55 @@ namespace Seam.WindowsHost.Gui
                     Console.WriteLine($"UI screenshot written: {screenshotPath} ({bitmap.Width}x{bitmap.Height})");
                 }
 
+                stage = "complete";
                 Console.WriteLine($"UI smoke test OK: window created, {controls} controls, state=Disconnected, no console window.");
                 return 0;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine("UI smoke test FAILED: " + ex);
+                ReportSmokeFailure(stage, ex);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// Records the stage about to run. Printed as it happens so a hang, which ends in a
+        /// timeout with no exception, still says which phase was in progress.
+        /// </summary>
+        private static string Stage(string name)
+        {
+            Console.WriteLine($"[ui-smoke] stage: {name}");
+            return name;
+        }
+
+        /// <summary>
+        /// Writes one compact, self-describing failure block: stage, exception type, message and
+        /// the innermost stack frames first, then the full trace.
+        /// Why: CI turns this text into a GitHub annotation, and the previous "tail of stderr"
+        /// window threw away exactly these first lines (type, message) while keeping outer frames.
+        /// </summary>
+        private static void ReportSmokeFailure(string stage, Exception ex)
+        {
+            Console.Error.WriteLine($"UI smoke test FAILED during {stage}: {ex.GetType().FullName}: {ex.Message}");
+
+            var frames = (ex.StackTrace ?? string.Empty)
+                .Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0)
+                .Take(6)
+                .ToArray();
+
+            if (frames.Length > 0)
+            {
+                Console.Error.WriteLine("stack frames (innermost first):");
+                foreach (var frame in frames)
+                {
+                    Console.Error.WriteLine("   " + frame);
+                }
+            }
+
+            Console.Error.WriteLine("--- full stack trace ---");
+            Console.Error.WriteLine(ex.ToString());
         }
 
         private static void Configure()

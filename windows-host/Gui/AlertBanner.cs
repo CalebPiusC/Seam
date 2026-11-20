@@ -16,11 +16,10 @@ namespace Seam.WindowsHost.Gui
 
         public AlertBanner()
         {
-            Height = 48;
-            Visible = false;
-            BackColor = Theme.StatusBusySoft;
-            Padding = new Padding(12, 0, 8, 0);
-
+            // Children are created *before* any bound of this panel changes.
+            // Why: WinForms flushes a pending layout from OnResize on the first bounds change
+            // of a new control, and OnLayout positions exactly these three children. Setting
+            // Height first therefore ran OnLayout while they were still null (NullReferenceException).
             _icon = Theme.MakeLabel("!", Theme.BodyStrong, Theme.StatusBusy, ContentAlignment.MiddleCenter);
             _icon.AutoSize = false;
             _icon.Width = 22;
@@ -44,6 +43,13 @@ namespace Seam.WindowsHost.Gui
             Controls.Add(_icon);
             Controls.Add(_dismiss);
             _dismiss.Click += (_, _) => HideBanner();
+
+            // Bounds and colours last, once every child exists: this is the first statement
+            // that can trigger OnLayout.
+            Height = 48;
+            Visible = false;
+            BackColor = Theme.StatusBusySoft;
+            Padding = new Padding(12, 0, 8, 0);
         }
 
         public event Action? Dismissed;
@@ -83,6 +89,15 @@ namespace Seam.WindowsHost.Gui
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
+
+            // Defensive: layout can fire at any time, including from a bounds change the base
+            // constructor makes before this constructor has assigned the children. There is
+            // nothing to place until all three exist.
+            if (_icon is null || _dismiss is null || _message is null)
+            {
+                return;
+            }
+
             int pad = 12;
             _icon.SetBounds(pad + 2, (Height - _icon.Height) / 2, _icon.Width, _icon.Height);
             _dismiss.SetBounds(Width - _dismiss.Width - 8, (Height - _dismiss.Height) / 2, _dismiss.Width, _dismiss.Height);
