@@ -27,6 +27,7 @@ namespace Seam.WindowsHost.Gui
 
         private bool _polling;
         private bool _shuttingDown;
+        private SessionState _lastState = SessionState.Disconnected;
         private AdbDevice? _device;
         private string? _autoConnectSerial;
 

@@ -93,7 +93,7 @@ jobs:
           $output = (dotnet restore $env:PROJECT 2>&1 | Out-String)
           Write-Host $output
           if ($LASTEXITCODE -ne 0) {
-            $reason = (($output -split "`n") | Where-Object { $_ -match 'error' } | Select-Object -First 4) -join ' | '
+            $reason = (($output -split "`n") | Where-Object { $_ -match ': error ' } | Select-Object -First 4) -join ' | '
             Write-Host "::error title=dotnet restore::$reason"
             throw "dotnet restore failed with exit code $LASTEXITCODE"
           }
@@ -105,7 +105,7 @@ jobs:
           $output = (dotnet build $env:PROJECT -c Release --no-restore -v normal 2>&1 | Out-String)
           Write-Host $output
           if ($LASTEXITCODE -ne 0) {
-            $reason = (($output -split "`n") | Where-Object { $_ -match 'error' } | Select-Object -First 6) -join ' | '
+            $reason = (($output -split "`n") | Where-Object { $_ -match ': error ' } | Select-Object -First 6) -join ' | '
             Write-Host "::error title=dotnet build::$reason"
             throw "dotnet build failed with exit code $LASTEXITCODE"
           }
