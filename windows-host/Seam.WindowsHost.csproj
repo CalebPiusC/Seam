@@ -52,4 +52,15 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      UseWindowsForms adds System.Windows.Forms and System.Drawing as global usings. The host
+      code declares its usings explicitly, and the global ones make `Timer` ambiguous between
+      System.Threading.Timer (the heartbeat in SeamConnection) and System.Windows.Forms.Timer.
+      Removing them keeps the original, explicit style.
+    -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
 </Project>
