@@ -2,7 +2,7 @@
 
   <!--
     Windows desktop host: a WinForms application that also keeps the original command-line
-    modes (--self-test, --diagnose, --trajectory, --capture, --connect).
+    modes (self-test, diagnose, trajectory, capture, connect).
 
     Why one project and not "core library + console app + GUI app":
       - the CLI and the window drive the same primitives (AppLayout, SeamAuthenticator,
@@ -14,7 +14,8 @@
         while Program.Main still attaches to the parent console (or writes to redirected
         stdout) for the CLI modes.
 
-    No NuGet packages: WinForms ships with the .NET SDK, everything else is P/Invoke.
+    Note: XML comments cannot contain double hyphens, which is why the CLI switches above are
+    written without their leading dashes.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>

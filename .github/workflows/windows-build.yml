@@ -88,15 +88,27 @@ jobs:
           # cannot contain "--", which is an easy way to break this file; check it explicitly.
           try { [void][xml](Get-Content $env:PROJECT -Raw) }
           catch { throw "$env:PROJECT is not well-formed XML: $($_.Exception.Message)" }
-          dotnet restore $env:PROJECT
-          if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
+          # Capture the output so a failure is reported as an annotation with the real reason:
+          # reading the job log is not always possible, an annotation always is.
+          $output = (dotnet restore $env:PROJECT 2>&1 | Out-String)
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) {
+            $reason = (($output -split "`n") | Where-Object { $_ -match 'error' } | Select-Object -First 4) -join ' | '
+            Write-Host "::error title=dotnet restore::$reason"
+            throw "dotnet restore failed with exit code $LASTEXITCODE"
+          }
 
       - name: Build (Release)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet build $env:PROJECT -c Release --no-restore -v normal
-          if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
+          $output = (dotnet build $env:PROJECT -c Release --no-restore -v normal 2>&1 | Out-String)
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) {
+            $reason = (($output -split "`n") | Where-Object { $_ -match 'error' } | Select-Object -First 6) -join ' | '
+            Write-Host "::error title=dotnet build::$reason"
+            throw "dotnet build failed with exit code $LASTEXITCODE"
+          }
 
       - name: Locate built executable
         id: exe
