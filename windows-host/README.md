@@ -1,7 +1,10 @@
-# SEAM Windows host — prototype
+# SEAM for Windows
 
-A Windows host for SEAM that talks to the **existing, unmodified Android agent** over the
-**existing `SEAM-Wire v1` protocol**.
+A Windows desktop application for SEAM that talks to the **existing, unmodified Android agent**
+over the **existing `SEAM-Wire v1` protocol**.
+
+The window is the product; the original command-line modes are still there for diagnostics and
+for the automated tests.
 
 Nothing outside `windows-host/`, the packaging assets under `windows-host/packaging/`, and
 `.github/workflows/windows-build.yml` was changed: `macos-host/` and `android-agent/` are untouched.
@@ -13,67 +16,153 @@ Nothing outside `windows-host/`, the packaging assets under `windows-host/packag
 You do **not** need the .NET SDK, the .NET runtime, or Visual Studio to run SEAM on Windows.
 A GitHub Actions workflow builds, tests and packages it on a Windows runner:
 
-**Actions → “Windows build” → Run workflow** (manual trigger, nothing is published on its own).
+**Actions → "Windows build" → Run workflow** (manual trigger, nothing is published on its own).
 
-When the run finishes, download the artifact:
+When the run finishes, download either artifact from that run:
 
-**Actions → the run → Artifacts → `SEAM-Windows-x64.zip`** → download → unzip.
+| Artifact | What it is |
+|---|---|
+| `SEAM-Setup-x64.exe` | Installer: Program Files, Start Menu, *Installed apps* entry, uninstaller |
+| `SEAM-Windows-x64.zip` | Portable build: unzip anywhere, run `seam-host.exe` |
 
 > The *Run workflow* button only appears once this file is on the default branch (a GitHub
 > limitation of `workflow_dispatch`). Until then, any push to an `arena/**` branch builds
-> automatically, and the artifact sits on that run.
+> automatically, and both artifacts sit on that run.
 
 What the workflow actually does, in order, and fails on the first broken step:
 
 ```text
 dotnet restore  →  dotnet build -c Release  →  seam-host.exe --self-test
    →  javac + d8 (builds seam-agent.jar from android-agent/ sources)
-   →  dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true
-   →  published seam-host.exe --self-test
-   →  zip  →  unzip it again and self-test the binary *inside the ZIP*
-   →  upload artifact
+   →  dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=false  →  build\app
+   →  add seam-agent.jar + platform-tools\ (adb) + docs to build\app    ← the ONE source of truth
+   →  --diagnose + --self-test from build\app, from C:\, and from a path with spaces
+   →  SEAM-Windows-x64.zip (flat)  →  unzip again, hash-compare, self-test the binary inside it
+   →  Get-Adb.ps1 under real Windows PowerShell 5.1 (no-op + repair runs)
+   →  SEAM-Setup-x64.exe (Inno Setup) from the same build\app
+   →  silent install  →  --diagnose/--self-test from Program Files  →  reinstall  →  uninstall
+   →  upload both artifacts
 ```
 
-Inside the ZIP:
+The ZIP and the installer are both produced from `build\app`, so they cannot drift apart.
+
+### Why the build is a folder, not a single file
+
+The first prototype published `-p:PublishSingleFile=true` with
+`IncludeNativeLibrariesForSelfExtract=true`. That build extracts the runtime to
+`%TEMP%\.net\seam-host\<id>\` and runs from there, so `AppContext.BaseDirectory` pointed at
+`%TEMP%` — which is exactly what the first real-device test reported: `adb.exe` was never
+found in the bundled `platform-tools\`, and `seam-agent.jar` was "expected in `%TEMP%`".
+
+Now the host resolves everything from the folder that contains `seam-host.exe`
+(`Environment.ProcessPath`, see `Host/AppLayout.cs`), and the build is a plain self-contained
+folder, so nothing is extracted at run time and there is no temp lifecycle to manage.
+
+### What is inside (both artifacts, identical files)
 
 ```text
-SEAM-Windows-x64/
-├── seam-host.exe              self-contained single file (no .NET needed)
-├── seam-agent.jar             Android agent, built from this repo's sources
-├── Get-Adb.ps1                one command to install Android Platform-Tools
-├── ADD-ADB-HERE.txt           why adb.exe is not in the ZIP, and why
-├── README-WINDOWS.txt         quick start
-├── THIRD-PARTY-NOTICES.md     what is bundled and under which licence
-├── BUILD-INFO.txt             commit, runner, SDK versions, SHA-256s
+SEAM-Windows-x64/                 (Explorer's "Extract All" makes exactly this one folder)
+├── seam-host.exe                 the host
+├── seam-host.dll, *.dll,         self-contained .NET 8 runtime - keep them beside the exe
+│   hostfxr.dll, coreclr.dll
+├── seam-agent.jar                Android agent, built from this repo's sources
+├── platform-tools\               Android Platform-Tools (adb.exe + 2 DLLs) - used from here
+├── Get-Adb.ps1                   optional repair tool (re-downloads Platform-Tools)
+├── README-WINDOWS.txt            quick start
+├── THIRD-PARTY-NOTICES.md        what is bundled and under which licence
+├── BUILD-INFO.txt                commit, runner, SDK versions, SHA-256s
 └── LICENSE
 ```
 
-**`adb.exe` is not bundled by default.** Android Platform-Tools are Google/AOSP binaries; adding
-them to a project ZIP is a redistribution decision for the maintainer, not something a build
-script should do silently (`windows-host/packaging/THIRD-PARTY-NOTICES.md`). The ZIP ships
-`Get-Adb.ps1`, which downloads Google's official archive into `platform-tools\` next to the
-executable — one command, no admin rights, no PATH edits — and `seam-host.exe` looks there first.
-If you would rather bundle them, run the workflow with `bundle_adb = true`.
+**`adb.exe` is bundled** in both artifacts. SEAM never requires a `PATH` entry, never copies
+anything into `%TEMP%`, and prefers its bundled Platform-Tools over any Android SDK already
+installed on the machine. See `packaging/THIRD-PARTY-NOTICES.md` for the redistribution
+notice that ships alongside them.
 
 **`seam-agent.jar` *is* bundled,** because it is compiled from this repository's own MIT-licensed
 `android-agent/` sources by the same workflow (the macOS app bundle embeds it the same way).
+
+Install, upgrade, uninstall and troubleshooting are documented step by step in
+[`INSTALL.md`](INSTALL.md); the physical-hardware checklist is
+[`MANUAL-VERIFICATION.md`](MANUAL-VERIFICATION.md).
 
 ### Current verified build
 
 | | |
 |---|---|
-| Run | [44729623831](https://github.com/CalebPiusC/Seam/actions/runs/44729623831) — every step green, 1 m 35 s, no warnings |
-| Artifact | `SEAM-Windows-x64.zip` — **30,005,433 bytes** (28.6 MiB) |
-| SHA-256 | `6c617bcf457f2b7bd22d8d214a3ee04f6a65f6aa07ed1312c3d54f3837be2003` |
-| `seam-host.exe` | 35,131,091 bytes — self-contained single file, .NET 8 win-x64 |
-| `seam-agent.jar` | 32,148 bytes — same size class as the jar the macOS build produces |
-| Verified by CI | ZIP expands, contains exactly the 8 expected files, and the **binary extracted from the ZIP passes `--self-test`** |
-
-Sizes shift slightly between runs (embedding timestamps), so treat these as the record for that run
-rather than constants; every ZIP carries its own `BUILD-INFO.txt`.
+| Run | [run 44743829261](https://github.com/CalebPiusC/Seam/actions/runs/44743829261) (commit `6b6795e`; `pull_request` and `push` both green, 21 steps) |
+| Shape | **flat archive**: files sit at the ZIP root, so Explorer's *Extract All* yields one `SEAM-Windows-x64` folder, not two nested ones |
+| Enforced by CI | `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path **and from `C:\Program Files\SEAM`**; the ZIP hash-compares file-for-file against `build\app`; the binary extracted from the ZIP passes `--self-test`; the installer is silently installed, run from the install dir, reinstalled over (pairing key unchanged) and uninstalled (pairing key preserved, *Installed apps* entry removed) |
+| Artifacts from that run | `SEAM-Windows-x64.zip` 38,922,185 B `sha256:65b3c1c028cf8cd3b21037c41be308c2cf14ab77208e94a5662014d6904c44dd` · `SEAM-Setup-x64.exe` 28,575,910 B `sha256:e0537bfe95606aece8301cad1d935e7417f6fa2824f237d3dcfc57225ec48bfd` (they change with every build — these are quoted with the run id) |
+| Installed-apps entry seen by CI | `SEAM 0.9.0` / `0.9.0` / `C:\Program Files\Seam Verification (x64)` |
 
 ---
 
+### The desktop application
+
+One executable, two faces: a window by default, the original CLI when asked.
+
+```text
+seam-host.exe                    -> MainForm (WinExe: no console is ever created)
+seam-host.exe --gui              -> same
+seam-host.exe --self-test        -> console output (borrows the launching terminal)
+seam-host.exe --diagnose         -> console output
+seam-host.exe --trajectory       -> console mode (scripted mouse stream, no hooks)
+seam-host.exe --capture          -> console mode (interactive, needs a terminal)
+```
+
+`Program.Main` attaches to the parent console (`AttachConsole`) only for those CLI modes, and is
+a no-op when stdout is already redirected (CI, pipes, `> file`).
+
+**Architecture.** The window is a view over `Host/SessionController.cs`, which owns exactly one
+session: adb discovery, agent bootstrap, authentication, the TCP connection and the low-level
+input hooks. It raises `StateChanged`, `Log`, `DevicesChanged` and `DisplayInfoReceived`; the form
+only renders them and forwards clicks. The controller is built on the same primitives the
+hardware-verified console mode uses (`AppLayout`, `SeamAuthenticator`, `AdbBootstrapper`,
+`SeamConnection`, `WindowsInputCapture`) - no protocol, transport or control-routing code is
+duplicated, and the console path is untouched.
+
+**What the window shows.** A compact navigation rail (Home / Activity / Settings /
+Diagnostics) and one page at a time, so the log no longer sits next to the connection controls.
+
+| Area | Contents |
+|---|---|
+| Rail | SEAM mark, the four destinations, the status pill (`Not connected` / `Connecting...` / `Connected` / `Unauthorized` / `Connection error`), version and whether adb is bundled |
+| Home - status | Phone model or `No phone detected`, one sentence of cause-and-fix, serial and endpoint, Connect (or Reconnect) / Disconnect / Refresh |
+| Home - arrangement | Read-only diagram of this PC and the phone on the configured screen edge; the tile that owns the pointer is drawn in the accent colour |
+| Home - input sharing | Who has the pointer right now (`Windows` / `Android phone`), what to do, live counters (sent / received / forwarded / uptime), Enable / Stop input sharing |
+| Activity | Timestamped log with severity colours, follow-latest, Copy and Clear, capped at the configured length - collected whether or not the page is open |
+| Settings | Screen edge, start sharing on connect, auto-connect, lines kept, and Save |
+| Diagnostics | The same report as `--diagnose`, copyable, refreshed on open |
+| Banner | Inline, dismissible message for unauthorised devices and connection errors - never a modal |
+
+Empty, loading and error states are first class: with no phone the window says *"No phone
+detected"* and lists the three steps that make one appear; while connecting the device card says
+what is happening; failures stay on screen until dismissed.
+
+**Lifecycle.** Closing the window stops the timers, removes the low-level hooks
+(`WindowsInputCapture.Dispose`), closes the TCP session and saves preferences. There is no tray
+icon by design - closing the window ends the session, so nothing is left running. The shared adb
+server is *not* killed: other tools (Android Studio, scrcpy) may be using it.
+
+**Preferences** live in `%APPDATA%\SEAM\ui-settings.json` (edge, auto-connect, input sharing on
+connect, activity length). They are separate from the pairing key in
+`%USERPROFILE%\.seam\auth_key`, which the UI only ever shows as a SHA-256 fingerprint.
+
+**`--ui-smoke`** builds the real window, forces layout, optionally renders it to a PNG, and exits
+without a message loop. CI runs it so that "the UI starts on a machine with no phone" and "the
+window can be drawn" are executed facts rather than claims.
+
+**Interactive launch** is exercised separately, because `--ui-smoke` never enters `Application.Run`:
+`.github/scripts/Test-SeamGuiLifecycle.ps1` starts `seam-host.exe` with **no arguments** (what a
+double-click, the Start Menu shortcut and the desktop shortcut all do), waits for a visible
+`WindowsForms` top-level window owned by that process, requires it to answer
+`SendMessageTimeout(WM_NULL)` - which only happens when the message loop is pumping - then posts
+`WM_CLOSE` and asserts exit code 0, no leftover `seam-host.exe`, and a settings file rewritten by
+`OnFormClosing -> SessionController.Dispose`. It also refuses to accept an error dialog (`#32770`)
+as the main window, so a failed start can never be reported as a good one.
+
+---
 
 ## 1. Honest status up front
 
@@ -85,16 +174,15 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | | State |
 |---|---|
 | Protocol / auth / framing design | **Verified by execution** — 33 conformance checks pass (`tools/verify_protocol.py`) against a device-side simulator transliterated from the shipped Java |
-| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), clean, 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44729623831)) |
-| `--self-test` | **Passes** — on the build output *and* on the published single-file exe, exit code 0 |
-| Packaging | **Produced** — self-contained single-file `win-x64`, `SEAM-Windows-x64.zip`, downloaded from the run's Artifacts |
-| Windows low-level hooks, `ClipCursor`, DPI | **Never executed** on interactive Windows — CI runs on a headless runner with no pointer |
-| `adb` bootstrap, device discovery | **Never executed** — the runner has `adb.exe` but there is no phone attached |
-| Real Android cursor movement | **Not demonstrated** — requires the above two rows |
-
-Do not read this as "the Windows host works". Read it as: *the protocol half is proven, the code
-compiles and its offline self-test passes, and the platform half is still unexecuted.* The single command that would close most of the gap is
-`seam-host.exe --self-test` on real Windows; the second is `--trajectory` against a real phone.
+| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44743829261)) |
+| `--self-test` | **Passes** — on the build output, on the published app folder, from a path with spaces, and on the binary extracted from the ZIP |
+| Resource discovery (`adb`, agent jar) | **Executed on Windows** — `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path and from the installed `Program Files` folder |
+| Packaging | **Produced and tested** — self-contained `win-x64` folder, `SEAM-Windows-x64.zip`, and `SEAM-Setup-x64.exe`, which CI silently installs, re-runs, upgrades and uninstalls |
+| Desktop window | **Built, rendered and opened** by CI — `--ui-smoke` creates the real `MainForm`, lays it out and renders it to a PNG artifact; a separate step launches it with no arguments and proves the `Application.Run` message loop answers, that `WM_CLOSE` closes it with exit code 0, and that no process is left behind. The PE subsystem is asserted to be GUI, so double-clicking cannot open a console |
+| USB control on real hardware | **Verified on a physical machine** (HP EliteBook 830 G6, Windows 11 x64, Samsung Galaxy A05 / Android 15): bundled adb discovery, agent push/start, device detection, mutual HMAC-SHA256, mouse + keyboard control, Ctrl+Alt+Q. That verification was done with the **console** build; the desktop window drives the same `SessionController` primitives but has not itself been exercised against a phone |
+| Desktop window against a phone | **Not demonstrated** — nobody has used the window with a phone attached; the launch/close lifecycle is CI-verified, the phone flows are not. See `MANUAL-VERIFICATION.md` section 2 |
+| Wireless (Wi-Fi) session | **Not physically verified** — mDNS discovery, automatic `adb connect`, reconnection and Disconnect-suppression are implemented and covered by 17 offline self-test checks; no Wi-Fi session has been run on hardware yet |
+| Windows low-level hooks, `ClipCursor`, DPI | **Executed on real hardware** in console mode; the same `WindowsInputCapture` instance is created by the window |
 
 ---
 
@@ -121,7 +209,7 @@ compiles and its offline self-test passes, and the platform half is still unexec
 - `Testing/` — in-process loopback agent + offline self-test.
 
 **Deliberately not built:** tray UI, arrangement flyout, UDP fast path, Wi-Fi discovery probe,
-clipboard monitoring, packaging. Prototype scope only.
+clipboard monitoring, screen mirroring, QR pairing. Prototype scope only.
 
 ---
 
@@ -139,10 +227,23 @@ dotnet build -c Release
 
 Output: `windows-host/bin/Release/net8.0/seam-host.exe`
 
-You also need the **unchanged** agent jar. Build it once on a Mac (`make build-agent`) or
-extract it from `SEAM.app/Contents/Resources/seam-agent.jar`, then place it next to
-`seam-host.exe` (or pass `--jar`). You also need `adb.exe` (Android Platform-Tools) either on
-`PATH`, in `platform-tools\` next to the exe, or via `--adb`.
+To run it you need the **unchanged** agent jar and an `adb.exe`. For a shipped build both are
+inside the package; for a from-source build, either run `windows-host\packaging\Get-Adb.ps1`
+in `bin\Release\net8.0\` (it installs Platform-Tools into `platform-tools\` there) and copy
+`seam-agent.jar` next to `seam-host.exe`, or pass `--adb` / `--jar`.
+
+Resolution is app-relative and printed on demand (`Host/AppLayout.cs`):
+
+```
+seam-host.exe --diagnose
+```
+
+```
+adb   : <app dir>\platform-tools\adb.exe   (then <app dir>\adb.exe, then PATH / Android SDK)
+agent : <app dir>\seam-agent.jar           (then <app dir>\Resources\seam-agent.jar)
+```
+
+The current directory is never consulted; a bundled copy always wins over `PATH`.
 
 ---
 
@@ -152,8 +253,12 @@ extract it from `SEAM.app/Contents/Resources/seam-agent.jar`, then place it next
 ```bat
 seam-host.exe --self-test
 ```
-Checks the golden handshake vectors, every frame layout, and a full TCP handshake against the
-in-process loopback agent. Expected: `N passed, 0 failed`, exit code 0.
+Checks the golden handshake vectors, every frame layout, a full TCP handshake against the
+in-process loopback agent, and resource discovery (executable directory, working-directory
+independence, a path containing spaces, missing-resource errors, `--adb` override rejection,
+`--auth-key` redaction, and - when `platform-tools\adb.exe` is present - actually launching adb).
+Expected: `N passed, 0 failed, M skipped`, exit code 0. A `SKIP` means the check needs a file the
+current folder does not have; it is never counted as a pass.
 
 ### 4b. Real phone, no input hooks — prove the wire path
 ```bat
@@ -186,9 +291,9 @@ control immediately. Press `q` in the console to quit, `r` to force a return.
 
 | Capability | Implemented | Verified |
 |---|---|---|
-| ADB device discovery (`adb devices -l` parsing) | yes | no |
-| Agent deploy/launch + ready-marker wait | yes | no |
-| `adb forward tcp:0 → localabstract:seam_uhid` | yes | no |
+| ADB device discovery (`adb devices -l` parsing) | yes | **yes** (self-test parsing + `--diagnose` on Windows CI) |
+| Agent deploy/launch + ready-marker wait | yes | physical USB run (console build); window untested |
+| `adb forward tcp:0 → localabstract:seam_uhid` | yes | physical USB run (console build); window untested |
 | Mutual HMAC-SHA256 handshake | yes | **yes** (byte-exact, both directions) |
 | `DISPLAY_INFO` receive + parse | yes | **yes** |
 | `PING`/`PONG` heartbeat + RTT plumbing | yes | **yes** |
@@ -200,10 +305,15 @@ control immediately. Press `q` in the console to quit, `r` to force a return.
 | Edge crossing + pointer pinning | yes | no |
 | Clipboard host→Android | frame + `--` | protocol yes; no monitor |
 | Clipboard Android→host | parse + log | protocol yes; no pasteboard write |
-| Wi-Fi TCP transport | via `--connect` | no |
-| Wi-Fi UDP fast path | no | — |
-| Wi-Fi/UDP discovery, mDNS pairing | no | — |
-| Tray UI, packaging, signing | no | — |
+| Wireless discovery (`adb mdns services`) + automatic `adb connect` | yes | logic unit-tested (17 checks); **no hardware run** |
+| Automatic reconnection after a Wi-Fi drop | yes | logic unit-tested; **no hardware run** |
+| Disconnect suppresses automatic reconnect | yes | logic unit-tested |
+| Initial pairing (`adb pair`, phone's code) | documented one-time step | manual by design — Android shows the code only on the phone |
+| Stale-agent / early-close recovery on connect | yes | logic unit-tested; **no hardware run** |
+| Connection states in the window (`SessionState` + guidance) | yes | text/state mapping unit-tested |
+| Installer, portable ZIP, upgrade, uninstall | yes | **yes** (CI installs, re-runs, upgrades, uninstalls) |
+| Code signing / auto-update | no | — (SmartScreen warning documented) |
+| System-tray icon | no | by design: closing the window ends the session |
 
 ---
 
@@ -286,7 +396,22 @@ signed 42-byte datagrams, discovery probe + mDNS pairing, tray flyout, packaging
 
 ```
 windows-host/
-├── Program.cs                     CLI: default / --self-test / --trajectory / --connect
+├── Program.cs                     entry point: GUI by default, CLI modes for diagnostics/tests
+├── app.manifest                   PerMonitorV2 DPI, Windows 10/11, asInvoker
+├── Gui/                           the desktop application (WinForms, no NuGet packages)
+│   ├── SeamGui.cs                 Application entry, --ui-smoke / --ui-screenshot
+│   ├── MainForm.cs                shell: rail, page host, Home page and all state rendering
+│   ├── NavRail.cs                 Home / Activity / Settings / Diagnostics navigation
+│   ├── ArrangementPanel.cs        read-only PC + phone diagram for the configured edge
+│   ├── StatusPill.cs / PillButton.cs / AlertBanner.cs / LogView.cs   small themed controls
+│   └── Theme.cs                   graphite palette, Segoe UI Variable ramp, card panel
+├── Host/
+│   ├── SessionController.cs       one place that owns adb, auth, session, wireless autopilot, hooks
+│   ├── WirelessDiscovery.cs       adb mDNS parsing + the autopilot rule (pure, unit-tested)
+│   ├── ConnectionDiagnosis.cs     detected condition -> headline/advice shown in the window
+│   ├── DiagnosticsReport.cs       shared report (CLI + window)
+│   ├── AppLayout.cs               app-relative adb/agent discovery
+│   └── UiSettings.cs              %APPDATA%\SEAM\ui-settings.json
 ├── Protocol/SeamWireProtocol.cs   constants, coordinates, DISPLAY_INFO/EDGE_RETURN parsing
 ├── Protocol/SeamAuthenticator.cs  3-message mutual HMAC-SHA256 (client side)
 ├── Protocol/SeamFrames.cs         outbound frame serializers
@@ -294,7 +419,11 @@ windows-host/
 ├── Bootstrap/AdbBootstrapper.cs   adb discovery, deploy, launch, forward
 ├── Input/WindowsKeyTable.cs       scan code → HID table, 6KRO state
 ├── Input/WindowsInputCapture.cs   LL hooks, edge crossing, pointer pinning
-└── Testing/                       LoopbackAgent (fixture) + SelfTest (oracle-driven)
+├── Testing/                       LoopbackAgent (fixture) + SelfTest (oracle-driven, 80 checks)
+├── installer/SEAM.iss             Inno Setup 6 installer (start-menu, Installed apps, uninstaller)
+├── packaging/Get-Adb.ps1          fetch/manage Android Platform-Tools (PS 5.1-compatible)
+├── INSTALL.md                     user-facing install, wireless and troubleshooting guide
+└── MANUAL-VERIFICATION.md         the physical acceptance checklist
 
 tools/
 ├── agent_sim.py                   device-side simulator (test fixture)
