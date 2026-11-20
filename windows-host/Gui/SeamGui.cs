@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Seam.WindowsHost.Host;
@@ -123,8 +124,7 @@ namespace Seam.WindowsHost.Gui
             Thread.Sleep(120);
             Application.DoEvents();
 
-            using var bitmap = new Bitmap(form.Width, form.Height, PixelFormat.Format32bppArgb);
-            form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+            using Bitmap bitmap = CaptureWindow(form);
             bitmap.Save(path, ImageFormat.Png);
             Console.WriteLine($"UI screenshot written: {path} ({bitmap.Width}x{bitmap.Height}, page {page})");
             DumpLayout(form, page);
@@ -135,6 +135,50 @@ namespace Seam.WindowsHost.Gui
                 // coarse average-colour grid of that one bitmap is enough to prove the theme.
                 ProbePalette(bitmap);
             }
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+
+        private const uint PwRenderFullContent = 0x2;
+
+        /// <summary>
+        /// Captures the window the way the compositor draws it, which includes the title bar and
+        /// any DWM material. <c>DrawToBitmap</c> only asks the form to paint itself, so chrome
+        /// that Windows draws (a dark caption, for instance) is missing from that image - the
+        /// earlier captures showed a grey band where the title bar is and could not prove
+        /// whether the dark-chrome request had taken effect. Falls back to DrawToBitmap when
+        /// PrintWindow is unavailable.
+        /// </summary>
+        private static Bitmap CaptureWindow(Form form)
+        {
+            var bitmap = new Bitmap(form.Width, form.Height, PixelFormat.Format32bppArgb);
+            try
+            {
+                using Graphics graphics = Graphics.FromImage(bitmap);
+                IntPtr hdc = graphics.GetHdc();
+                bool ok;
+                try
+                {
+                    ok = PrintWindow(form.Handle, hdc, PwRenderFullContent);
+                }
+                finally
+                {
+                    graphics.ReleaseHdc(hdc);
+                }
+
+                if (ok)
+                {
+                    return bitmap;
+                }
+            }
+            catch (Exception)
+            {
+                // Any interop surprise: fall through to the GDI paint path.
+            }
+
+            form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
+            return bitmap;
         }
 
         /// <summary>
