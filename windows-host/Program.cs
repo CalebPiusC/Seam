@@ -1,6 +1,9 @@
 using System;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Seam.WindowsHost.Bootstrap;
+using Seam.WindowsHost.Gui;
 using Seam.WindowsHost.Host;
 using Seam.WindowsHost.Input;
 using Seam.WindowsHost.Protocol;
@@ -14,6 +17,9 @@ namespace Seam.WindowsHost
         public bool ShowHelp;
         public bool SelfTest;
         public bool Diagnose;
+        public bool LaunchGui;
+        public bool UiSmoke;
+        public string? ScreenshotPath;
         public bool Trajectory;
         public bool ForceCapture;
         public string? Connect;
@@ -25,23 +31,41 @@ namespace Seam.WindowsHost
 
     internal static class Program
     {
+        // STAThread is required by WinForms; the console paths do not care.
+        [STAThread]
         private static int Main(string[] args)
         {
             Options options = ParseArgs(args);
 
             if (options.ShowHelp)
             {
+                PrepareConsole();
                 PrintUsage();
                 return 0;
             }
             if (options.SelfTest)
             {
+                PrepareConsole();
                 return SelfTest.Run();
             }
             if (options.Diagnose)
             {
+                PrepareConsole();
                 return RunDiagnose(options);
             }
+            if (options.UiSmoke)
+            {
+                // Renders the real window without a message loop; used by CI.
+                PrepareConsole();
+                return SeamGui.RunSmoke(options.ScreenshotPath);
+            }
+            if (options.LaunchGui)
+            {
+                // Double-click / Start Menu / shortcut: a window, never a console.
+                return SeamGui.Run();
+            }
+
+            PrepareConsole();
 
             try
             {
@@ -212,8 +236,7 @@ namespace Seam.WindowsHost
             return string.Join(Environment.NewLine, lines);
         }
 
-        private static string VersionString =>
-            typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        private static string VersionString => DiagnosticsReport.VersionString;
 
         /// <summary>
         /// `--diagnose`: prints exactly where SEAM looked for its resources and what it found.
@@ -222,140 +245,8 @@ namespace Seam.WindowsHost
         /// </summary>
         private static int RunDiagnose(Options options)
         {
-            Console.WriteLine("=== SEAM Windows host - diagnostics ===");
-            Console.WriteLine($"version         : {VersionString}");
-            Console.WriteLine($"process path    : {Environment.ProcessPath ?? "(unknown)"}");
-            Console.WriteLine($"app context dir : {AppContext.BaseDirectory}");
-            Console.WriteLine($"current dir     : {Environment.CurrentDirectory}");
-            Console.WriteLine();
-
-            AppLayout layout;
-            try
-            {
-                layout = AppLayout.ResolveForRoot(
-                    AppLayout.ExecutableDirectory(), options.AdbPath, options.JarPath, requireResources: false);
-            }
-            catch (SeamResourceException ex)
-            {
-                Console.WriteLine($"[FAIL] {ex.Message}");
-                return 2;
-            }
-
-            bool ok = true;
-
-            Console.WriteLine($"app dir         : {layout.AppRoot}");
-
-            // ---- adb ----
-            Console.WriteLine();
-            Console.WriteLine("ADB");
-            if (layout.AdbPath == null)
-            {
-                ok = false;
-                Console.WriteLine("  [FAIL] adb.exe not found. Searched:");
-                foreach (string candidate in layout.AdbCandidates)
-                {
-                    Console.WriteLine($"         - {candidate}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"  path     : {layout.AdbPath}");
-                Console.WriteLine($"  source   : {(layout.AdbIsBundled ? "bundled with SEAM" : "system / PATH (not bundled)")}");
-                try
-                {
-                    var bootstrapper = new AdbBootstrapper(layout.AgentJarPath ?? "unused", layout.AdbPath);
-                    foreach (string line in bootstrapper.AdbVersion())
-                    {
-                        Console.WriteLine($"  version  : {line}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ok = false;
-                    Console.WriteLine($"  [FAIL] adb could not be executed: {ex.Message}");
-                }
-            }
-
-            string platformTools = Path.Combine(layout.AppRoot, AppLayout.PlatformToolsFolder);
-            int toolCount = Directory.Exists(platformTools)
-                ? Directory.GetFiles(platformTools).Length
-                : 0;
-            Console.WriteLine($"  platform-tools folder: {platformTools} ({(Directory.Exists(platformTools) ? toolCount + " files" : "missing")})");
-
-            // ---- agent jar ----
-            Console.WriteLine();
-            Console.WriteLine("ANDROID AGENT");
-            if (layout.AgentJarPath == null)
-            {
-                ok = false;
-                Console.WriteLine("  [FAIL] seam-agent.jar not found. Searched:");
-                foreach (string candidate in layout.JarCandidates)
-                {
-                    Console.WriteLine($"         - {candidate}");
-                }
-            }
-            else
-            {
-                var info = new FileInfo(layout.AgentJarPath);
-                Console.WriteLine($"  path     : {layout.AgentJarPath}");
-                Console.WriteLine($"  size     : {info.Length:n0} bytes");
-            }
-
-            // ---- pairing key (never printed) ----
-            Console.WriteLine();
-            Console.WriteLine("PAIRING KEY");
-            string keyPath = SeamAuthenticator.KeyStorePath;
-            if (File.Exists(keyPath))
-            {
-                try
-                {
-                    SeamAuthenticator auth = SeamAuthenticator.LoadOrCreatePersistentKey();
-                    Console.WriteLine($"  store      : {keyPath}");
-                    Console.WriteLine($"  fingerprint: {auth.KeyFingerprint}  (SHA-256 prefix; the key is never printed)");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"  [WARN] could not read {keyPath}: {ex.Message}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"  store      : {keyPath} (not created yet; it is generated on first run)");
-            }
-
-            // ---- devices ----
-            Console.WriteLine();
-            Console.WriteLine("DEVICES");
-            if (layout.AdbPath != null)
-            {
-                try
-                {
-                    var bootstrapper = new AdbBootstrapper(layout.AgentJarPath ?? "unused", layout.AdbPath);
-                    var devices = bootstrapper.ListDevices();
-                    if (devices.Count == 0)
-                    {
-                        Console.WriteLine("  none visible to adb (see the checklist in --help / README)");
-                    }
-                    else
-                    {
-                        foreach (AdbDevice d in devices)
-                        {
-                            Console.WriteLine($"  {d.Serial}  state={d.State}  model={d.Model}  authorized={d.IsAuthorized}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"  [WARN] {ex.Message}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("  skipped (no adb)");
-            }
-
-            Console.WriteLine();
-            Console.WriteLine(ok ? "RESULT: all bundled resources found." : "RESULT: a required resource is missing (see FAIL above).");
+            string report = DiagnosticsReport.Build(options.AdbPath, options.JarPath, out bool ok);
+            Console.WriteLine(report);
             return ok ? 0 : 2;
         }
 
@@ -480,6 +371,48 @@ namespace Seam.WindowsHost
         private static string Truncate(string s) =>
             s.Length <= 48 ? s : s.Substring(0, 45) + "...";
 
+        // ---- Console attachment -----------------------------------------------------------
+
+        // The executable is a GUI-subsystem binary, so double-clicking it never flashes a
+        // console. The CLI modes (--diagnose, --self-test, --trajectory, --capture, --help)
+        // borrow the launching terminal's console instead, so their output lands where the user
+        // expects. When stdout is redirected (CI, pipes, `> file`) the inherited handle already
+        // works and nothing is attached.
+
+        private const uint AttachParentProcess = 0xFFFFFFFF;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AttachConsole(uint dwProcessId);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetConsoleWindow();
+
+        private static void PrepareConsole()
+        {
+            try
+            {
+                if (Console.IsOutputRedirected)
+                {
+                    return; // pipe or file: GetStdHandle is already valid
+                }
+                if (GetConsoleWindow() != IntPtr.Zero)
+                {
+                    return; // a console is already attached
+                }
+                if (!AttachConsole(AttachParentProcess))
+                {
+                    return; // launched from Explorer with no terminal; nothing to print to
+                }
+
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+            }
+            catch
+            {
+                // Console plumbing is best effort; exit codes still carry the result.
+            }
+        }
+
         // ---- CLI -------------------------------------------------------------------------
 
         private static Options ParseArgs(string[] args)
@@ -493,6 +426,12 @@ namespace Seam.WindowsHost
                     case "--trajectory": o.Trajectory = true; break;
                     case "--capture": o.ForceCapture = true; break;
                     case "--diagnose": o.Diagnose = true; break;
+                    case "--gui": o.LaunchGui = true; break;
+                    case "--ui-smoke": o.UiSmoke = true; break;
+                    case "--ui-screenshot":
+                        o.UiSmoke = true;
+                        o.ScreenshotPath = Next(args, ref i);
+                        break;
                     case "-h":
                     case "--help": o.ShowHelp = true; break;
                     case "--connect": o.Connect = Next(args, ref i); break;
@@ -514,6 +453,13 @@ namespace Seam.WindowsHost
                         break;
                 }
             }
+
+            // No arguments at all: this is the desktop application's normal launch path.
+            if (args.Length == 0)
+            {
+                o.LaunchGui = true;
+            }
+
             return o;
         }
 
@@ -533,18 +479,23 @@ USAGE
   seam-host.exe [options]
 
 MODES
-  (default)        Discover a device over ADB, bootstrap seam-agent, connect,
-                   then capture Windows input at the configured screen edge.
+  (default)        Opens the SEAM desktop window. This is what the Start Menu and
+                   desktop shortcuts run; there is no console window.
+  --gui            Force the desktop window (same as no arguments).
+  --capture        Console mode: connect, then capture Windows input at the edge.
   --self-test      Offline protocol/auth/frame/resource tests (no phone needed).
   --diagnose       Show where SEAM looked for adb.exe, seam-agent.jar and the pairing
                    key, what it found, and which devices adb sees.
   --trajectory     Connect and stream a scripted mouse path (no input hooks).
                    Use this to prove the wire path on real hardware.
+  --ui-smoke       Build the window, verify it initialises, exit. Used by CI.
+  --ui-screenshot PATH
+                   Same, but also render the window to a PNG at PATH.
 
 OPTIONS
   --connect H:P    Bypass ADB and connect directly to H:P (e.g. phone-ip:27186).
   --edge E         Screen edge the phone sits on: right (default), left, top, bottom.
-  --capture        Route to Android on the first mouse movement (deterministic demo).
+  --capture        Console mode: route to Android on the first mouse movement.
   --device SERIAL  Pick a specific adb serial.
   --jar PATH       Override seam-agent.jar (default: next to seam-host.exe).
   --adb PATH       Override adb.exe (default: platform-tools\adb.exe next to seam-host.exe,

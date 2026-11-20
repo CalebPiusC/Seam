@@ -1,29 +1,32 @@
 SEAM for Windows - x64 build
 ============================
 
-This is the SEAM Windows host, packaged as a self-contained .NET 8 build.
-You do NOT need to install .NET, the .NET SDK, or Visual Studio.
-Nothing needs to be added to PATH, and nothing is copied to %TEMP% at run time.
+SEAM shares one mouse and keyboard between this PC and an Android phone.
+This build needs no .NET installation, no PATH edits and nothing copied to %TEMP%.
 
 IF YOU USED SEAM-Setup-x64.exe
 ------------------------------
-SEAM is installed under C:\Program Files\SEAM. Start it from the Start Menu
-("SEAM"), or from the desktop shortcut if you asked for one. Uninstall it from
-Settings -> Apps -> Installed apps -> SEAM. Uninstalling keeps your pairing key
-unless you explicitly say otherwise (see "YOUR DATA" below).
+SEAM is installed in C:\Program Files\SEAM. Start it from the Start Menu ("SEAM") or
+from the desktop shortcut if you asked for one: the SEAM window opens.
+
+  - "SEAM"                the application
+  - "SEAM diagnostics"    the troubleshooting report, in a console window
+  - "SEAM quick start"    this file
+  - Uninstall: Settings -> Apps -> Installed apps -> SEAM
+
+Uninstalling keeps your pairing key unless you say otherwise (see YOUR DATA below).
 
 IF YOU USED THE PORTABLE ZIP
 ----------------------------
-The ZIP is flat: Windows Explorer's "Extract All" creates a single
-SEAM-Windows-x64 folder with these files directly inside it. Keep the whole
-folder together - seam-host.exe needs the same folder's platform-tools\ and
-seam-agent.jar. You can move the folder anywhere (including a path with spaces);
-you can run seam-host.exe from Explorer, a shortcut, PowerShell, or cmd.exe.
+The ZIP is flat: Explorer's "Extract All" creates one SEAM-Windows-x64 folder with these
+files directly inside it. Keep the folder together - seam-host.exe needs the same
+folder's platform-tools\ and seam-agent.jar. You can move the folder anywhere (including
+a path with spaces), then double-click seam-host.exe.
 
-CONTENTS
---------
-  seam-host.exe              The SEAM Windows host
-  seam-host.dll, *.dll,      The self-contained .NET 8 runtime and SEAM code.
+WHAT IS IN THE FOLDER
+---------------------
+  seam-host.exe              The SEAM desktop application (no console window)
+  seam-host.dll, *.dll,      The self-contained .NET 8 desktop runtime.
   hostfxr.dll, hostpolicy.dll,   These stay in the same folder as seam-host.exe.
   coreclr.dll, System.*.dll
   seam-agent.jar             The Android agent, built from this repository's
@@ -37,77 +40,72 @@ CONTENTS
   THIRD-PARTY-NOTICES.md     What is bundled, what is not, and why.
   BUILD-INFO.txt             Exact commit / runner / SDK versions used to build.
 
-HOW SEAM FINDS ITS FILES
-------------------------
-SEAM looks next to seam-host.exe, never in the current directory, on PATH, or in
-%TEMP%:
+USING THE APPLICATION
+---------------------
+  1. Enable Developer options -> USB debugging on the phone (tap "Build number"
+     seven times in Settings -> About phone to unlock Developer options).
+  2. Plug the phone in and tap ALLOW on the "Allow USB debugging?" prompt.
+  3. Open SEAM. The window says "No phone detected" until a phone is visible; it does
+     not need a phone to start.
+  4. Press Connect. SEAM pushes and starts the agent, then authenticates with mutual
+     HMAC-SHA256. The status pill turns green: Connected.
+  5. Input sharing is enabled automatically after connecting. Move the pointer to the
+     screen edge named in the window (right by default) to take control of the phone.
+  6. Ctrl + Alt + Q returns control to Windows at any time. Disconnect (or unplug the
+     cable) returns control as well.
+  7. Unplug and re-plug: SEAM notices the phone again, and the Connect button becomes
+     Reconnect. Settings lets you turn on "connect automatically".
 
-  adb.exe       platform-tools\adb.exe   (then adb.exe, then PATH / Android SDK;
-                                         a bundled copy always wins)
-  agent jar     seam-agent.jar           (then Resources\seam-agent.jar)
+Settings live in %APPDATA%\SEAM\ui-settings.json (edge, auto-connect, activity length).
+Nothing there is secret.
 
-Override either one explicitly with --adb <path> / --jar <path>.
-Run `seam-host.exe --diagnose` to print exactly what was found and where.
+IF SOMETHING DOES NOT WORK
+--------------------------
+The window shows inline messages for the three cases that actually happen:
 
-PHONE PREPARATION (once)
-------------------------
-  1. Settings -> About phone -> tap "Build number" 7x to unlock Developer options.
-  2. Settings -> Developer options -> enable "USB debugging".
-  3. Plug the phone in and ACCEPT the "Allow USB debugging?" prompt on the phone.
-     (Tick "Always allow from this computer" if you trust the machine.)
+  Unauthorized      Unlock the phone and tap ALLOW. No prompt? Run
+                    "adb kill-server" then re-plug the cable.
+  Connection error  Read the message; the Diagnostics button shows every path SEAM
+                    searched and what adb reports.
+  No phone detected Check the cable and the OEM USB driver, or use Wireless debugging
+                    (no driver needed).
 
-If SEAM says the device is "unauthorized", unlock the phone and accept the prompt.
-If it says "offline", unplug/replug the cable or run `adb kill-server`.
-If the phone never appears at all, Windows is missing an OEM ADB driver - many
-vendors (e.g. Transsion / TECNO / Infinix) ship none. Wireless Debugging avoids
-the driver problem entirely.
+"SEAM diagnostics" (Start Menu) or this console command prints the same report:
 
-QUICK START
------------
-  seam-host.exe --diagnose
-        Show the app folder, the adb it will use, the agent jar it found, the
-        pairing-key fingerprint, and the devices adb can see. Read-only.
+    seam-host.exe --diagnose
 
-  seam-host.exe --self-test
-        Offline check: handshake, frame encoding, TCP loopback round-trip and
-        resource discovery. No phone and no adb needed.
-        Expect "0 failed" and exit code 0.
+It ends with "RESULT: all bundled resources found." when the installation is intact.
+It never prints your pairing key - only a short SHA-256 fingerprint.
 
-  seam-host.exe --trajectory
-        Connects to the real phone, pushes and starts seam-agent.jar, then streams
-        a scripted mouse path. If the phone's cursor traces a figure-eight, the
-        whole wire path works. Safe: no input hooks, nothing is captured.
+The original command-line modes are still there for troubleshooting:
 
-  seam-host.exe --capture
-        Full control: the mouse routes to the phone on first movement.
-        Ctrl+Alt+Q returns control to Windows. Press q in the console to quit.
-
-  seam-host.exe --help
-        All options (--edge, --connect, --device, --jar, --adb).
+    seam-host.exe --self-test        offline protocol/self-check, no phone needed
+    seam-host.exe --trajectory       connect and stream a scripted mouse path
+    seam-host.exe --capture          console mode: old-style interactive session
+    seam-host.exe --help             every option
 
 YOUR DATA
 ---------
-The pairing key lives at %USERPROFILE%\.seam\auth_key (outside the install
-folder) and is shared with SEAM on macOS. Upgrades never touch it; uninstalling
-asks before deleting it and keeps it by default. SEAM never prints the key -
-only a short SHA-256 fingerprint, which is not the key itself.
+The pairing key lives at %USERPROFILE%\.seam\auth_key (outside the install folder) and
+is shared with SEAM on macOS. Upgrades never touch it; uninstalling asks before deleting
+it and keeps it by default.
 
 REQUIREMENTS
 ------------
-  Windows 10 22H2 or Windows 11, x64. One monitor for the first test.
+  Windows 10 (22H2 or later) or Windows 11, 64-bit. One monitor for the first test.
   Android 11+ phone with USB or Wireless Debugging enabled.
   No .NET installation of any kind.
 
 WARNING
 -------
-While routed, seam-host installs system-wide low-level mouse and keyboard hooks
-and swallows input for the phone. Ctrl+Alt+Q always returns control. Do not run
-it while unattended. UAC prompts and the lock screen are invisible to low-level
+While input is being shared, SEAM installs system-wide low-level mouse and keyboard
+hooks and swallows input for the phone. Ctrl+Alt+Q always returns control. Do not leave
+a shared session unattended. UAC prompts and the lock screen are invisible to low-level
 hooks - input pauses there by design.
 
-WHAT IS NOT DONE YET
---------------------
-Screen mirroring, QR-code pairing and remote control of the phone screen are NOT
-implemented. SEAM shares one mouse and one keyboard with the phone's existing
-Android UI; it does not stream video. See the repository README for the current
-status.
+WHAT IS NOT IMPLEMENTED
+-----------------------
+Screen mirroring, QR-code pairing and remote control of the phone's screen. SEAM shares
+one mouse and one keyboard with the phone's existing Android UI; it does not stream
+video. There is no system-tray icon: closing the window ends the session and removes the
+hooks, by design.

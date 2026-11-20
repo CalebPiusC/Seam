@@ -263,6 +263,50 @@ jobs:
           if ($rootRun.ExitCode -ne 0) { throw "--diagnose failed when launched from C:\ (exit $($rootRun.ExitCode))" }
           if ($rootRun.StdOut -notmatch [regex]::Escape($appFull)) { throw "resource resolution changed with the working directory" }
           Write-Host "still resolved: $appFull"
+      - name: Desktop UI - GUI subsystem, window construction and screenshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
+
+          $exe = Join-Path $env:APP_DIR 'seam-host.exe'
+
+          # "No console flashes on double-click" is a property of the PE header: a GUI-subsystem
+          # binary (2) never allocates a console, a console binary (3) does. Assert it rather
+          # than trusting the project file.
+          function Get-PeSubsystem([string]$Path) {
+            $stream = [System.IO.File]::OpenRead($Path)
+            try {
+              $reader = New-Object System.IO.BinaryReader($stream)
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadInt32()
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) { throw "$Path is not a PE file" }
+              $stream.Position = $peOffset + 24 + 68   # optional header + Subsystem field
+              return $reader.ReadUInt16()
+            } finally { $stream.Dispose() }
+          }
+
+          $subsystem = Get-PeSubsystem $exe
+          Write-Host "PE subsystem: $subsystem (2 = Windows GUI, 3 = console)"
+          if ($subsystem -ne 2) {
+            throw "seam-host.exe is a console-subsystem binary ($subsystem); double-clicking would flash a console window"
+          }
+
+          # Build the real window, lay it out, render it to a PNG and exit without a message loop.
+          # Proves the UI initialises on a machine with no phone and no interactive input.
+          $shot = Join-Path $PWD 'build\ui-preview.png'
+          $ui = Invoke-SeamCommand -Path $exe -ArgumentList '--ui-smoke', '--ui-screenshot', $shot -TimeoutSeconds 180
+          Write-Host $ui.StdOut
+          if ($ui.StdErr) { Write-Host $ui.StdErr }
+          if ($ui.ExitCode -ne 0) { throw "UI smoke test FAILED (exit $($ui.ExitCode))" }
+
+          if (-not (Test-Path $shot)) { throw "the UI screenshot was not written to $shot" }
+          $png = Get-Item $shot
+          if ($png.Length -lt 15000) { throw "the UI screenshot is implausibly small ($($png.Length) bytes)" }
+          Write-Host ("UI screenshot: {0} ({1:N0} bytes)" -f $png.FullName, $png.Length)
+          Write-Host "::notice title=Desktop UI::PE subsystem=GUI (no console), window built and rendered, $($png.Length) byte screenshot"
+
       - name: App folder - path with spaces and parentheses
         shell: pwsh
         run: |
@@ -568,6 +612,10 @@ jobs:
           $test = Invoke-SeamCommand -Path $exe -ArgumentList '--self-test' -WorkingDirectory 'C:\Windows'
           if ($test.ExitCode -ne 0) { throw "installed self-test FAILED (exit $($test.ExitCode))" }
 
+          $ui = Invoke-SeamCommand -Path $exe -ArgumentList '--ui-smoke' -WorkingDirectory 'C:\Windows'
+          if ($ui.ExitCode -ne 0) { throw "installed UI smoke test FAILED (exit $($ui.ExitCode))" }
+          Write-Host $ui.StdOut
+
           # ---- Installed-apps registration ----
           $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
                                     'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
@@ -623,6 +671,15 @@ jobs:
           path: build/SEAM-Windows-x64.zip
           archive: false
           if-no-files-found: error
+          retention-days: ${{ inputs.retention_days || 30 }}
+
+      - name: Upload UI screenshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: SEAM-ui-preview
+          path: build/ui-preview.png
+          archive: false
+          if-no-files-found: warn
           retention-days: ${{ inputs.retention_days || 30 }}
 
       - name: Upload installer

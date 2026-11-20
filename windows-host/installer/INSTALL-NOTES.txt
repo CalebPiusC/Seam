@@ -1,29 +1,28 @@
 SEAM is installed
 =================
 
-Thanks for trying SEAM. Three things worth knowing right now.
+Start it from the Start Menu ("SEAM") or the desktop shortcut. The SEAM window opens;
+there is no console window to close.
 
-1. Start it from the Start Menu
-   "SEAM" opens a console window and starts looking for your phone.
-   "SEAM diagnostics" (Start Menu) prints what was found without connecting.
+1. Prepare the phone once
+   Settings -> About phone -> tap "Build number" 7x, then
+   Settings -> Developer options -> USB debugging -> on.
+   Plug the cable in and tap ALLOW on the phone.
 
-2. Your phone must authorise this PC
-   Enable Settings -> Developer options -> USB debugging, plug the phone in, and
-   accept the "Allow USB debugging?" prompt on the phone. Until you do, SEAM
-   reports the device as "unauthorized" - that is the expected state, not a bug.
+2. In SEAM
+   The window shows the phone when adb can see it. Press Connect: SEAM pushes the
+   Android agent, authenticates, and turns the status pill green.
+   Move the pointer to the named screen edge to control the phone.
+   Ctrl + Alt + Q always returns control to Windows.
 
-3. adb and the Android agent are already installed
-   SEAM ships Android Platform-Tools in C:\Program Files\SEAM\platform-tools and
-   seam-agent.jar next to seam-host.exe. There is nothing to add to PATH, nothing
-   to copy into %TEMP%, and no .NET installation required.
+3. Nothing else to install
+   Android Platform-Tools (adb) and the agent are inside C:\Program Files\SEAM.
+   No PATH edits, no %TEMP% copying, no .NET download.
 
-If something does not work:
-
-  seam-host.exe --diagnose
-
-prints the install folder, the adb it resolved, the agent jar it resolved, the
-pairing-key fingerprint (never the key), and the devices adb can see. Attach that
-output to an issue at https://github.com/CalebPiusC/Seam/issues.
+If something does not work
+--------------------------
+  Use the Diagnostics button in the window, or Start Menu -> "SEAM diagnostics".
+  It prints every path SEAM searched and what adb reports, and never your pairing key.
 
 Your pairing key lives at %USERPROFILE%\.seam\auth_key and survives upgrades.
 Uninstalling SEAM asks before deleting it, and keeps it if you say no.

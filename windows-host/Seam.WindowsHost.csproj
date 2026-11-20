@@ -1,24 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Deliberately targets plain `net8.0` (not `net8.0-windows`) and uses ONLY P/Invoke
-    against user32/kernel32. Consequences:
-      - Zero NuGet package references (nothing to restore beyond the SDK).
-      - No WinForms/WPF/WindowsDesktop SDK dependency.
-      - The project *compiles on any OS*; it only *runs* on Windows.
+    Windows desktop host: a WinForms application that also keeps the original command-line
+    modes (--self-test, --diagnose, --trajectory, --capture, --connect).
 
-    Shipping configuration lives in .github/workflows/windows-build.yml:
-      self-contained win-x64 publish, PublishSingleFile=false.
-    Folder-based, not single-file, on purpose: a self-extracting single-file build runs the
-    process out of %TEMP%\.net\... and that is what made the prototype look for adb.exe and
-    seam-agent.jar in the wrong place. See windows-host/Host/AppLayout.cs.
+    Why one project and not "core library + console app + GUI app":
+      - the CLI and the window drive the same primitives (AppLayout, SeamAuthenticator,
+        AdbBootstrapper, SeamConnection, WindowsInputCapture), so a split would add a project
+        and a packaging step without removing any code;
+      - one executable means one artifact, one installer entry, and no second copy of the
+        bundled adb/agent search paths;
+      - OutputType=WinExe removes the console window that used to flash on a double-click,
+        while Program.Main still attaches to the parent console (or writes to redirected
+        stdout) for the CLI modes.
 
-    Note: this comment cannot use double hyphens (XML comments forbid them), which is why
-    the publish switches are described in prose rather than pasted as command-line flags.
+    No NuGet packages: WinForms ships with the .NET SDK, everything else is P/Invoke.
   -->
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Seam.WindowsHost</RootNamespace>
     <AssemblyName>seam-host</AssemblyName>
     <Nullable>enable</Nullable>
@@ -27,25 +28,27 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
 
-    <!-- Product identity: shows up in Task Manager and in Windows "Installed apps". -->
+    <!-- DPI + OS compatibility live in the manifest so they apply before any managed code. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- Product identity: Task Manager, file properties and Windows "Installed apps". -->
     <Product>SEAM</Product>
-    <AssemblyTitle>SEAM Windows host</AssemblyTitle>
-    <Description>SEAM Windows host - shares one mouse and keyboard with an Android phone over SEAM-Wire v1.</Description>
+    <AssemblyTitle>SEAM</AssemblyTitle>
+    <Description>SEAM - share one mouse and keyboard between Windows and an Android phone.</Description>
     <Company>SEAM</Company>
     <Copyright>MIT (c) 2026 Feranmi Oresajo</Copyright>
-    <Version>0.9.0</Version>
-    <FileVersion>0.9.0.0</FileVersion>
+    <Version>0.10.0</Version>
+    <FileVersion>0.10.0.0</FileVersion>
+    <ApplicationIcon>packaging\seam.ico</ApplicationIcon>
 
     <!-- Only English resources are shipped; keeps the self-contained folder small. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <PublishTrimmed>false</PublishTrimmed>
 
-    <!--
-      The Win32 icon is embedded only when building on Windows (the release path). Building
-      on macOS/Linux - the repo's other supported dev platforms - must not gain a dependency
-      on Windows-specific resource tooling.
-    -->
-    <ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">packaging\seam.ico</ApplicationIcon>
+    <!-- Lets a macOS/Linux checkout at least *compile* the Windows project (CI and releases
+         are built on Windows). WinForms runs only on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
 </Project>

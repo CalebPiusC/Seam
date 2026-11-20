@@ -49,6 +49,7 @@ namespace Seam.WindowsHost.Testing
             TestFrameLayouts();
             TestLoopbackHandshakeAndFrames();
             TestResourceResolution();
+            TestDesktopSupport();
 
             Console.WriteLine();
             Console.WriteLine($"=== {_passed} passed, {_failed} failed, {_skipped} skipped ===");
@@ -339,6 +340,70 @@ namespace Seam.WindowsHost.Testing
             Check("logging: --auth-key is redacted in adb diagnostics",
                 !string.Join(" ", redacted).Contains("0123456789abcdef") &&
                 string.Join(" ", redacted).Contains("--auth-key=***"));
+        }
+
+        /// <summary>
+        /// The desktop application's non-visual pieces: preference storage (which must never
+        /// touch the pairing key) and the diagnostics text (which must never contain a key).
+        /// The window itself is exercised by `--ui-smoke` in CI.
+        /// </summary>
+        private static void TestDesktopSupport()
+        {
+            Console.WriteLine("\n[5] Desktop application support");
+
+            string scratch = CreateScratchDir("seam-desktop");
+            try
+            {
+                string path = Path.Combine(scratch, "ui-settings.json");
+
+                UiSettings defaults = UiSettings.Load(path);
+                Check("settings: sane defaults when no file exists",
+                    defaults.Edge == "right" && defaults.RoutingOnConnect &&
+                    !defaults.AutoConnect && defaults.MaxLogLines == 500);
+
+                var written = new UiSettings
+                {
+                    Edge = "left",
+                    RoutingOnConnect = false,
+                    AutoConnect = true,
+                    MaxLogLines = 250,
+                    LastDeviceSerial = "SM_A055F"
+                };
+                written.Save(path);
+                Check("settings: written to disk", File.Exists(path));
+
+                UiSettings loaded = UiSettings.Load(path);
+                Check("settings: round-trips every field",
+                    loaded.Edge == "left" && !loaded.RoutingOnConnect && loaded.AutoConnect &&
+                    loaded.MaxLogLines == 250 && loaded.LastDeviceSerial == "SM_A055F");
+
+                Check("settings: edge maps to the wire constant",
+                    new UiSettings { Edge = "top" }.EdgeCode == SeamWireProtocol.EdgeTop &&
+                    new UiSettings { Edge = "bottom" }.EdgeCode == SeamWireProtocol.EdgeBottom);
+
+                File.WriteAllText(path, "{ this is not json");
+                Check("settings: a corrupt file falls back to defaults",
+                    UiSettings.Load(path).Edge == "right");
+
+                File.WriteAllText(path, "{\"Edge\":\"sideways\",\"MaxLogLines\":0}");
+                UiSettings clamped = UiSettings.Load(path);
+                Check("settings: hand-edited values are clamped",
+                    clamped.Edge == "right" && clamped.MaxLogLines == 50);
+
+                Check("settings: preferences live outside the pairing-key folder",
+                    !UiSettings.DefaultPath.Contains(".seam", StringComparison.OrdinalIgnoreCase));
+
+                string report = DiagnosticsReport.Build(null, null, out _);
+                Check("diagnostics: reports the app folder, adb and a result line",
+                    report.Contains("app dir") && report.Contains("ADB") && report.Contains("RESULT:"));
+                Check("diagnostics: prints a key fingerprint, never a key",
+                    report.Contains("fingerprint") &&
+                    !System.Text.RegularExpressions.Regex.IsMatch(report, "[0-9a-fA-F]{64}"));
+            }
+            finally
+            {
+                TryDelete(scratch);
+            }
         }
 
         private static string CreateScratchDir(string name)

@@ -82,13 +82,17 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
+; The exe is a GUI-subsystem binary, so these launch the desktop window with no console.
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Comment: "Share one mouse and keyboard with an Android phone"
-Name: "{group}\{#AppName} diagnostics"; Filename: "{app}\{#AppExe}"; Parameters: "--diagnose"; WorkingDir: "{app}"; Comment: "Check adb, agent and device detection without connecting"
+; Diagnostics prints to a console on purpose, so it runs inside the command processor,
+; which also keeps the window open long enough to read the report.
+Name: "{group}\{#AppName} diagnostics"; Filename: "{cmd}"; Parameters: "/k ""{app}\{#AppExe}"" --diagnose"; IconFilename: "{app}\{#AppExe}"; Comment: "Check adb, agent and device detection without connecting"
 Name: "{group}\{#AppName} quick start"; Filename: "{app}\README-WINDOWS.txt"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\{#AppExe}"; Description: "Start SEAM"; Flags: postinstall nowait skipifsilent unchecked
 Filename: "{app}\README-WINDOWS.txt"; Description: "Open the SEAM quick start guide"; Flags: postinstall shellexec skipifsilent unchecked
 
 ; No [UninstallDelete] entry on purpose: the uninstaller already removes exactly the
