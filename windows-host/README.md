@@ -1,7 +1,10 @@
-# SEAM Windows host — prototype
+# SEAM for Windows
 
-A Windows host for SEAM that talks to the **existing, unmodified Android agent** over the
-**existing `SEAM-Wire v1` protocol**.
+A Windows desktop application for SEAM that talks to the **existing, unmodified Android agent**
+over the **existing `SEAM-Wire v1` protocol**.
+
+The window is the product; the original command-line modes are still there for diagnostics and
+for the automated tests.
 
 Nothing outside `windows-host/`, the packaging assets under `windows-host/packaging/`, and
 `.github/workflows/windows-build.yml` was changed: `macos-host/` and `android-agent/` are untouched.
@@ -95,6 +98,60 @@ Install, upgrade, uninstall and troubleshooting are documented step by step in
 
 ---
 
+### The desktop application
+
+One executable, two faces: a window by default, the original CLI when asked.
+
+```text
+seam-host.exe                    -> MainForm (WinExe: no console is ever created)
+seam-host.exe --gui              -> same
+seam-host.exe --self-test        -> console output (borrows the launching terminal)
+seam-host.exe --diagnose         -> console output
+seam-host.exe --trajectory       -> console mode (scripted mouse stream, no hooks)
+seam-host.exe --capture          -> console mode (interactive, needs a terminal)
+```
+
+`Program.Main` attaches to the parent console (`AttachConsole`) only for those CLI modes, and is
+a no-op when stdout is already redirected (CI, pipes, `> file`).
+
+**Architecture.** The window is a view over `Host/SessionController.cs`, which owns exactly one
+session: adb discovery, agent bootstrap, authentication, the TCP connection and the low-level
+input hooks. It raises `StateChanged`, `Log`, `DevicesChanged` and `DisplayInfoReceived`; the form
+only renders them and forwards clicks. The controller is built on the same primitives the
+hardware-verified console mode uses (`AppLayout`, `SeamAuthenticator`, `AdbBootstrapper`,
+`SeamConnection`, `WindowsInputCapture`) - no protocol, transport or control-routing code is
+duplicated, and the console path is untouched.
+
+**What the window shows.**
+
+| Area | Contents |
+|---|---|
+| Header | SEAM mark, status pill: `Not connected` / `Connecting...` / `Connected` / `Unauthorized` / `Connection error`, and Diagnostics / Settings |
+| Device card | Phone model and serial, connection detail, a short cause-and-fix hint, Connect (or Reconnect) / Disconnect / Refresh |
+| Input routing card | Who has the pointer right now (`Windows` / `Android phone`), what to do, live counters (sent / received / forwarded / uptime), and Enable / Stop input sharing |
+| Activity | Timestamped log with severity colours, Copy and Clear, capped at the configured length |
+| Banner | Inline, dismissible message for unauthorised devices and connection errors - never a modal |
+| Footer | Version, `adb: bundled`, install folder, and `Ctrl + Alt + Q returns control to Windows` |
+
+Empty, loading and error states are first class: with no phone the window says *"No phone
+detected"* and lists the three steps that make one appear; while connecting the device card says
+what is happening; failures stay on screen until dismissed.
+
+**Lifecycle.** Closing the window stops the timers, removes the low-level hooks
+(`WindowsInputCapture.Dispose`), closes the TCP session and saves preferences. There is no tray
+icon by design - closing the window ends the session, so nothing is left running. The shared adb
+server is *not* killed: other tools (Android Studio, scrcpy) may be using it.
+
+**Preferences** live in `%APPDATA%\SEAM\ui-settings.json` (edge, auto-connect, input sharing on
+connect, activity length). They are separate from the pairing key in
+`%USERPROFILE%\.seam\auth_key`, which the UI only ever shows as a SHA-256 fingerprint.
+
+**`--ui-smoke`** builds the real window, forces layout, optionally renders it to a PNG, and exits
+without a message loop. CI runs it so that "the UI starts on a machine with no phone" and "the
+window can be drawn" are executed facts rather than claims.
+
+---
+
 ## 1. Honest status up front
 
 The authoring sandbox was **Linux with no .NET SDK, no JVM, no `adb` and no Android device**,
@@ -109,13 +166,10 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | `--self-test` | **Passes** — on the build output, on the published app folder, from a path with spaces, and on the binary extracted from the ZIP |
 | Resource discovery (`adb`, agent jar) | **Executed on Windows** — `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path and from the installed `Program Files` folder |
 | Packaging | **Produced and tested** — self-contained `win-x64` folder, `SEAM-Windows-x64.zip`, and `SEAM-Setup-x64.exe`, which CI silently installs, re-runs, upgrades and uninstalls |
-| Windows low-level hooks, `ClipCursor`, DPI | **Never executed** on interactive Windows — CI runs on a headless runner with no pointer |
-| `adb` bootstrap, device discovery | **Never executed** — the runner has `adb.exe` but there is no phone attached |
-| Real Android cursor movement | **Not demonstrated** — requires the above two rows |
-
-Do not read this as "the Windows host works". Read it as: *the protocol half is proven, the code
-compiles and its offline self-test passes, and the platform half is still unexecuted.* The single command that would close most of the gap is
-`seam-host.exe --self-test` on real Windows; the second is `--trajectory` against a real phone.
+| Desktop window | **Built and rendered** by CI — `--ui-smoke` creates the real `MainForm`, lays it out, renders it to a PNG artifact, and exits; the PE subsystem is asserted to be GUI, so double-clicking cannot open a console |
+| USB control on real hardware | **Verified on a physical machine** (HP EliteBook 830 G6, Windows 11 x64, Samsung Galaxy A05 / Android 15): bundled adb discovery, agent push/start, device detection, mutual HMAC-SHA256, mouse + keyboard control, Ctrl+Alt+Q. That verification was done with the **console** build; the desktop window drives the same `SessionController` primitives but has not itself been exercised against a phone |
+| Desktop window against a phone | **Not demonstrated** — Connect/Disconnect/unauthorised states in the window have only been exercised headlessly |
+| Windows low-level hooks, `ClipCursor`, DPI | **Executed on real hardware** in console mode; the same `WindowsInputCapture` instance is created by the window |
 
 ---
 
@@ -324,7 +378,20 @@ signed 42-byte datagrams, discovery probe + mDNS pairing, tray flyout, packaging
 
 ```
 windows-host/
-├── Program.cs                     CLI: default / --self-test / --diagnose / --trajectory / --connect
+├── Program.cs                     entry point: GUI by default, CLI modes for diagnostics/tests
+├── app.manifest                   PerMonitorV2 DPI, Windows 10/11, asInvoker
+├── Gui/                           the desktop application (WinForms, no NuGet packages)
+│   ├── SeamGui.cs                 Application entry, --ui-smoke / --ui-screenshot
+│   ├── MainForm.cs                window: status, device card, routing card, activity log
+│   ├── SettingsForm.cs            edge, auto-connect, activity length
+│   ├── DiagnosticsForm.cs         the same report as --diagnose
+│   ├── StatusPill.cs / PillButton.cs / AlertBanner.cs / LogView.cs   small themed controls
+│   └── Theme.cs                   colours, fonts, card panel
+├── Host/
+│   ├── SessionController.cs       one place that owns adb, auth, session and input hooks
+│   ├── DiagnosticsReport.cs       shared report (CLI + window)
+│   ├── AppLayout.cs               app-relative adb/agent discovery
+│   └── UiSettings.cs              %APPDATA%\SEAM\ui-settings.json
 ├── Protocol/SeamWireProtocol.cs   constants, coordinates, DISPLAY_INFO/EDGE_RETURN parsing
 ├── Protocol/SeamAuthenticator.cs  3-message mutual HMAC-SHA256 (client side)
 ├── Protocol/SeamFrames.cs         outbound frame serializers

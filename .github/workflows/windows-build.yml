@@ -288,6 +288,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          trap { Write-Host "::error title=Desktop UI::$($_.Exception.Message)"; exit 1 }
           . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
 
           $exe = Join-Path $env:APP_DIR 'seam-host.exe'

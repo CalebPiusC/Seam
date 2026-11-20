@@ -45,6 +45,14 @@ function Invoke-SeamCommand {
                 $Path, ($ArgumentList -join ' '), $TimeoutSeconds, $stdout, $stderr)
     }
 
+    if ($process.ExitCode -ne 0) {
+        # Surface the real reason as an annotation: reading the job log is not always possible.
+        $tail = (($stderr + "`n" + $stdout) -split "`n" |
+                 Where-Object { $_ -match '\S' } |
+                 Select-Object -Last 4) -join ' | '
+        Write-Host "::error title=$([System.IO.Path]::GetFileName($Path)) exit $($process.ExitCode)::$tail"
+    }
+
     return [pscustomobject]@{
         ExitCode = $process.ExitCode
         StdOut   = $stdout
