@@ -247,7 +247,8 @@ namespace Seam.WindowsHost.Gui
                 "copyReport", "diagOutput"
             };
 
-            Console.WriteLine($"[ui-layout] page={page} window={form.Width}x{form.Height}");
+            Console.WriteLine($"[ui-layout] page={page} window={form.Width}x{form.Height} dpi={form.DeviceDpi} " +
+                              $"autoscale={form.AutoScaleDimensions.Width}x{form.AutoScaleDimensions.Height}");
             foreach (string name in names)
             {
                 Control[] found = form.Controls.Find(name, true);

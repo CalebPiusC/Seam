@@ -61,6 +61,13 @@ namespace Seam.WindowsHost.Gui
             set { if (_routingToPhone != value) { _routingToPhone = value; Invalidate(); } }
         }
 
+        /// <summary>
+        /// K = 1 at 96 dpi. The panel is scaled by the form's auto-scaling, but the tiles are
+        /// drawn here in device pixels, so every measurement below is multiplied by this factor:
+        /// otherwise the diagram keeps its 100% size inside a 125%-scaled card.
+        /// </summary>
+        private float Scale => DeviceDpi / 96f;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -72,17 +79,18 @@ namespace Seam.WindowsHost.Gui
                 g.FillRectangle(background, ClientRectangle);
             }
 
-            const int MacWidth = 132;
-            const int MacHeight = 82;
-            const int PhoneLong = 64;
-            const int PhoneShort = 34;
-            const int Gap = 12;
+            float s = Scale;
+            int macWidth = (int)Math.Round(144 * s);
+            int macHeight = (int)Math.Round(90 * s);
+            int phoneLong = (int)Math.Round(70 * s);
+            int phoneShort = (int)Math.Round(38 * s);
+            int gap = (int)Math.Round(12 * s);
 
             bool verticalPhone = _edge == "left" || _edge == "right";
-            Size phone = verticalPhone ? new Size(PhoneShort, PhoneLong) : new Size(PhoneLong, PhoneShort);
+            Size phone = verticalPhone ? new Size(phoneShort, phoneLong) : new Size(phoneLong, phoneShort);
 
-            int groupWidth = verticalPhone ? MacWidth + Gap + phone.Width : Math.Max(MacWidth, phone.Width);
-            int groupHeight = verticalPhone ? Math.Max(MacHeight, phone.Height) : MacHeight + Gap + phone.Height;
+            int groupWidth = verticalPhone ? macWidth + gap + phone.Width : Math.Max(macWidth, phone.Width);
+            int groupHeight = verticalPhone ? Math.Max(macHeight, phone.Height) : macHeight + gap + phone.Height;
 
             int originX = (ClientSize.Width - groupWidth) / 2;
             int originY = (ClientSize.Height - groupHeight) / 2;
@@ -92,80 +100,95 @@ namespace Seam.WindowsHost.Gui
             switch (_edge)
             {
                 case "left":
-                    mac = new Rectangle(originX + phone.Width + Gap, originY + (groupHeight - MacHeight) / 2, MacWidth, MacHeight);
+                    mac = new Rectangle(originX + phone.Width + gap, originY + (groupHeight - macHeight) / 2, macWidth, macHeight);
                     phoneRect = new Rectangle(originX, originY + (groupHeight - phone.Height) / 2, phone.Width, phone.Height);
                     break;
                 case "top":
                     phoneRect = new Rectangle(originX + (groupWidth - phone.Width) / 2, originY, phone.Width, phone.Height);
-                    mac = new Rectangle(originX + (groupWidth - MacWidth) / 2, originY + phone.Height + Gap, MacWidth, MacHeight);
+                    mac = new Rectangle(originX + (groupWidth - macWidth) / 2, originY + phone.Height + gap, macWidth, macHeight);
                     break;
                 case "bottom":
-                    mac = new Rectangle(originX + (groupWidth - MacWidth) / 2, originY, MacWidth, MacHeight);
-                    phoneRect = new Rectangle(originX + (groupWidth - phone.Width) / 2, originY + MacHeight + Gap, phone.Width, phone.Height);
+                    mac = new Rectangle(originX + (groupWidth - macWidth) / 2, originY, macWidth, macHeight);
+                    phoneRect = new Rectangle(originX + (groupWidth - phone.Width) / 2, originY + macHeight + gap, phone.Width, phone.Height);
                     break;
                 default:
-                    mac = new Rectangle(originX, originY + (groupHeight - MacHeight) / 2, MacWidth, MacHeight);
-                    phoneRect = new Rectangle(originX + MacWidth + Gap, originY + (groupHeight - phone.Height) / 2, phone.Width, phone.Height);
+                    mac = new Rectangle(originX, originY + (groupHeight - macHeight) / 2, macWidth, macHeight);
+                    phoneRect = new Rectangle(originX + macWidth + gap, originY + (groupHeight - phone.Height) / 2, phone.Width, phone.Height);
                     break;
             }
 
             bool pcActive = _connected && !_routingToPhone;
             bool phoneActive = _connected && _routingToPhone;
 
-            PaintMac(g, mac, pcActive);
-            PaintPhone(g, phoneRect, phoneActive, _connected);
+            PaintMac(g, mac, pcActive, s);
+            PaintPhone(g, phoneRect, phoneActive, _connected, s);
         }
 
-        private static void PaintMac(Graphics g, Rectangle bounds, bool active)
+        private static void PaintMac(Graphics g, Rectangle bounds, bool active, float s)
         {
             Color fill = active ? Blend(Theme.Accent, Theme.Surface, 0.82f) : Theme.SurfaceRaised;
             Color border = active ? Theme.Accent : Theme.Border;
-            Theme.FillRounded(g, bounds, 10, fill, border);
+            Theme.FillRounded(g, bounds, (int)Math.Round(10 * s), fill, border);
 
-            // Screen: a lighter inset rectangle, then the hinge bar underneath.
-            Rectangle screen = new(bounds.X + 16, bounds.Y + 14, bounds.Width - 32, bounds.Height - 34);
-            Theme.FillRounded(g, screen, 5, active ? Color.FromArgb(38, 255, 255, 255) : Theme.SurfaceMuted, null);
+            // Screen, then the hinge bar, then the caption along the bottom edge of the tile.
+            Rectangle screen = new(
+                bounds.X + (int)Math.Round(16 * s),
+                bounds.Y + (int)Math.Round(12 * s),
+                bounds.Width - (int)Math.Round(32 * s),
+                bounds.Height - (int)Math.Round(40 * s));
+            Theme.FillRounded(g, screen, (int)Math.Round(5 * s),
+                active ? Color.FromArgb(38, 255, 255, 255) : Theme.SurfaceMuted, null);
 
-            Rectangle hinge = new(bounds.X + 8, screen.Bottom + 6, bounds.Width - 16, 4);
+            Rectangle hinge = new(
+                bounds.X + (int)Math.Round(8 * s),
+                screen.Bottom + (int)Math.Round(5 * s),
+                bounds.Width - (int)Math.Round(16 * s),
+                Math.Max(2, (int)Math.Round(3 * s)));
             Theme.FillRounded(g, hinge, 2, active ? Theme.Accent : Theme.BorderStrong, null);
 
-            var label = new Rectangle(bounds.X, bounds.Bottom - 20, bounds.Width, 16);
+            var label = new Rectangle(
+                bounds.X + (int)Math.Round(4 * s),
+                bounds.Bottom - (int)Math.Round(26 * s),
+                bounds.Width - (int)Math.Round(8 * s),
+                (int)Math.Round(20 * s));
             TextRenderer.DrawText(g, "This PC", Theme.Caption, label,
                 active ? Theme.TextPrimary : Theme.TextTertiary,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
             if (active)
             {
-                FillDot(g, bounds.Right - 14, bounds.Top + 14);
+                FillDot(g, bounds.Right - (int)Math.Round(14 * s), bounds.Top + (int)Math.Round(14 * s), s);
             }
         }
 
-        private static void PaintPhone(Graphics g, Rectangle bounds, bool active, bool connected)
+        private static void PaintPhone(Graphics g, Rectangle bounds, bool active, bool connected, float s)
         {
             Color fill = active ? Blend(Theme.Accent, Theme.Surface, 0.82f)
                        : connected ? Theme.SurfaceRaised
                        : Blend(Theme.SurfaceRaised, Theme.Surface, 0.5f);
             Color border = active ? Theme.Accent : connected ? Theme.BorderStrong : Theme.Border;
 
-            Theme.FillRounded(g, bounds, 8, fill, border);
+            Theme.FillRounded(g, bounds, (int)Math.Round(8 * s), fill, border);
 
             bool vertical = bounds.Height >= bounds.Width;
+            int inset = (int)Math.Round(7 * s);
             Rectangle speaker = vertical
-                ? new(bounds.X + bounds.Width / 2 - 6, bounds.Y + 7, 12, 2)
-                : new(bounds.X + 7, bounds.Y + bounds.Height / 2 - 6, 2, 12);
+                ? new Rectangle(bounds.X + bounds.Width / 2 - (int)Math.Round(6 * s), bounds.Y + inset, (int)Math.Round(12 * s), Math.Max(2, (int)Math.Round(2 * s)))
+                : new Rectangle(bounds.X + inset, bounds.Y + bounds.Height / 2 - (int)Math.Round(6 * s), Math.Max(2, (int)Math.Round(2 * s)), (int)Math.Round(12 * s));
             Theme.FillRounded(g, speaker, 1,
                 active ? Theme.Accent : connected ? Theme.BorderStrong : Theme.TextTertiary, null);
 
             if (active)
             {
-                FillDot(g, bounds.Right - 12, bounds.Top + 12);
+                FillDot(g, bounds.Right - (int)Math.Round(12 * s), bounds.Top + (int)Math.Round(12 * s), s);
             }
         }
 
-        private static void FillDot(Graphics g, int centerX, int centerY)
+        private static void FillDot(Graphics g, int centerX, int centerY, float s)
         {
+            int size = Math.Max(4, (int)Math.Round(6 * s));
             using var brush = new SolidBrush(Theme.TextPrimary);
-            g.FillEllipse(brush, centerX - 3, centerY - 3, 6, 6);
+            g.FillEllipse(brush, centerX - size / 2, centerY - size / 2, size, size);
         }
 
         /// <summary>Mixes <paramref name="fore"/> over <paramref name="back"/> at the given share.</summary>

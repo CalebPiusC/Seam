@@ -93,6 +93,12 @@ namespace Seam.WindowsHost.Gui
             BackColor = Theme.Background;
             ForeColor = Theme.TextPrimary;
             Font = Theme.Body;
+            // The window is laid out at 100% for a 1040x700 client. AutoScaleDimensions must say
+            // so: without it a code-built form is created with AutoScaleDimensions equal to the
+            // *current* DPI, which means "this layout was designed here" and nothing is scaled -
+            // while point-sized fonts still grow with the DPI. On a 125% display that left the
+            // identity block and the page heading clipped by their own boxes.
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(1040, 700);
@@ -151,6 +157,24 @@ namespace Seam.WindowsHost.Gui
             _diagOutput.Name = "diagOutput";
             _btnCopyDiag.Name = "copyReport";
             _banner.Name = "banner";
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+
+            // Too tall for the display (large text scaling, small laptop screen): the layout is
+            // all percent-based below the header, so it compresses instead of running off-screen.
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            int maxWidth = Math.Max(880, work.Width - 40);
+            int maxHeight = Math.Max(600, work.Height - 60);
+            if (Width > maxWidth || Height > maxHeight)
+            {
+                Size = new Size(Math.Min(Width, maxWidth), Math.Min(Height, maxHeight));
+                Location = new Point(
+                    work.Left + Math.Max(0, (work.Width - Width) / 2),
+                    work.Top + Math.Max(0, (work.Height - Height) / 2));
+            }
         }
 
         private void ApplyIcon()
@@ -223,6 +247,7 @@ namespace Seam.WindowsHost.Gui
             rail.Controls.Add(pillHost, 0, 2);
 
             _lblRailVersion.Dock = DockStyle.Fill;
+            _lblRailVersion.AutoEllipsis = true;
             _lblRailVersion.Padding = new Padding(22, 0, 8, 10);
             rail.Controls.Add(_lblRailVersion, 0, 3);
 
@@ -267,8 +292,9 @@ namespace Seam.WindowsHost.Gui
             var wordmark = Theme.MakeLabel("SEAM", Theme.Title, Theme.TextPrimary, ContentAlignment.MiddleLeft);
             wordmark.SetBounds(58, 24, 140, 24);
 
-            var tagline = Theme.MakeLabel("Mouse and keyboard sharing", Theme.Caption, Theme.TextTertiary, ContentAlignment.MiddleLeft);
-            tagline.SetBounds(59, 47, 150, 18);
+            var tagline = Theme.MakeLabel("Mouse & keyboard sharing", Theme.Caption, Theme.TextTertiary, ContentAlignment.MiddleLeft);
+            tagline.AutoEllipsis = true;
+            tagline.SetBounds(59, 47, 142, 20);
 
             identity.Controls.Add(logo);
             identity.Controls.Add(wordmark);
@@ -345,17 +371,19 @@ namespace Seam.WindowsHost.Gui
                 ColumnCount = 2,
                 RowCount = 1,
                 Margin = Padding.Empty,
-                Padding = new Padding(28, 24, 28, 10)
+                Padding = new Padding(28, 22, 28, 10)
             };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            header.RowStyles.Add(new RowStyle(SizeType.Absolute, 54f));
+            header.RowStyles.Add(new RowStyle(SizeType.Absolute, 58f));
 
             var text = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Margin = Padding.Empty };
             var titleLabel = Theme.MakeLabel(title, Theme.PageTitle, Theme.TextPrimary, ContentAlignment.MiddleLeft);
-            titleLabel.SetBounds(0, 0, 460, 30);
+            titleLabel.AutoEllipsis = true;
+            titleLabel.SetBounds(0, 0, 520, 34);
             var descriptionLabel = Theme.MakeLabel(description, Theme.Small, Theme.TextSecondary, ContentAlignment.MiddleLeft);
-            descriptionLabel.SetBounds(1, 30, 560, 20);
+            descriptionLabel.AutoEllipsis = true;
+            descriptionLabel.SetBounds(1, 34, 620, 22);
             text.Controls.Add(titleLabel);
             text.Controls.Add(descriptionLabel);
 
@@ -389,7 +417,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Home
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             page.Controls.Add(PageHeader("Home", "Share one mouse and keyboard with your Android phone.", out _), 0, 0);
@@ -620,7 +648,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Activity
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             Control header = PageHeader("Activity", "Everything SEAM did this session, newest at the bottom.", out FlowLayoutPanel actions);
@@ -685,7 +713,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Settings
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             page.Controls.Add(PageHeader("Settings", "Preferences are stored next to the application and apply to this PC.", out _), 0, 0);
@@ -911,7 +939,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Diagnostics
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             Control header = PageHeader("Diagnostics",
@@ -1231,10 +1259,9 @@ namespace Seam.WindowsHost.Gui
 
         private void UpdateRail()
         {
-            string adb = _session.AdbPath == null
-                ? "adb missing"
-                : "adb " + (_session.AdbIsBundled ? "bundled" : "system");
-            _lblRailVersion.Text = "Version " + Host.DiagnosticsReport.VersionString + " · " + adb;
+            // One short line: the rail is 216px wide and must survive 150% text scaling. The adb
+            // source is spelled out on the Settings page instead.
+            _lblRailVersion.Text = "Version " + Host.DiagnosticsReport.VersionString;
 
             string adbPath = _session.AdbPath == null
                 ? "adb: not found - reinstall SEAM"
