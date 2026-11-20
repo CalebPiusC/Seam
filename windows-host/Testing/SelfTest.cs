@@ -396,9 +396,20 @@ namespace Seam.WindowsHost.Testing
                 string report = DiagnosticsReport.Build(null, null, out _);
                 Check("diagnostics: reports the app folder, adb and a result line",
                     report.Contains("app dir") && report.Contains("ADB") && report.Contains("RESULT:"));
-                Check("diagnostics: prints a key fingerprint, never a key",
-                    report.Contains("fingerprint") &&
+                Check("diagnostics: reports the pairing-key location", report.Contains("PAIRING KEY"));
+                Check("diagnostics: never prints 64 hex characters of key material",
                     !System.Text.RegularExpressions.Regex.IsMatch(report, "[0-9a-fA-F]{64}"));
+
+                // When a key already exists (second run, or a developer machine) the report must
+                // show a fingerprint instead of the key itself.
+                if (File.Exists(SeamAuthenticator.KeyStorePath))
+                {
+                    Check("diagnostics: shows a fingerprint once a key exists", report.Contains("fingerprint"));
+                }
+                else
+                {
+                    Skip("diagnostics: shows a fingerprint once a key exists", "no pairing key on this machine yet");
+                }
             }
             finally
             {

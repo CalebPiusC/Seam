@@ -127,10 +127,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $exe = '${{ steps.exe.outputs.path }}'
           Write-Host "running: $exe --self-test"
-          & $exe --self-test
+          $output = (& $exe --self-test 2>&1 | Out-String)
           $code = $LASTEXITCODE
+          Write-Host $output
           Write-Host "self-test exit code: $code"
-          if ($code -ne 0) { throw "self-test FAILED (exit $code)" }
+          if ($code -ne 0) {
+            $failed = (($output -split "`n") | Where-Object { $_ -match '\[FAIL\]' } | Select-Object -First 6) -join ' | '
+            Write-Host "::error title=self-test::$failed"
+            throw "self-test FAILED (exit $code)"
+          }
 
       # ---------------------------------------------------------------- runtime assets
       - name: Build Android agent (seam-agent.jar) from source
