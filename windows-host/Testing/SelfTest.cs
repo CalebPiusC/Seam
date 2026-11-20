@@ -484,10 +484,10 @@ namespace Seam.WindowsHost.Testing
                 wireless.Contains("cable", StringComparison.OrdinalIgnoreCase) &&
                 !wireless.Contains("driver", StringComparison.OrdinalIgnoreCase));
 
-            string unauthorized = ConnectionDiagnosis.Guidance(ConnectionProblem.Unauthorized);
+            string unauthorizedText = ConnectionDiagnosis.Guidance(ConnectionProblem.Unauthorized);
             Check("guidance: the USB authorise text never mentions wireless",
-                !unauthorized.Contains("wireless", StringComparison.OrdinalIgnoreCase) &&
-                !unauthorized.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase));
+                !unauthorizedText.Contains("wireless", StringComparison.OrdinalIgnoreCase) &&
+                !unauthorizedText.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase));
 
             Check("guidance: every condition has its own headline",
                 ConnectionDiagnosis.Headline(ConnectionProblem.NoDevice) !=
