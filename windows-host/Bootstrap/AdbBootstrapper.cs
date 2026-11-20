@@ -133,7 +133,8 @@ namespace Seam.WindowsHost.Bootstrap
         /// Pushes the agent (if needed) and launches it detached, returning any Wi-Fi endpoints
         /// it advertised. Mirrors bootstrapSession()/deployAndLaunchDetachedDaemon().
         /// </summary>
-        public List<(string iface, string ip, int port)> BootstrapSession(AdbDevice device, SeamAuthenticator auth)
+        public List<(string iface, string ip, int port)> BootstrapSession(
+            AdbDevice device, SeamAuthenticator auth, bool forceRedeploy = false)
         {
             if (!File.Exists(_localJarPath))
             {
@@ -152,13 +153,32 @@ namespace Seam.WindowsHost.Bootstrap
                 RemoteStampPath + " 2>/dev/null) || true";
             string runningStamp = TryRun(new[] { "-s", serial, "shell", probe })?.Trim() ?? "";
 
-            if (expectedStamp.Length > 0 && runningStamp == expectedStamp)
+            // Reuse the running agent only when it is *listening*, not merely when a process with
+            // that name exists and a stamp file matches. A marker left behind by an agent that has
+            // since died made the next `adb forward` accept the connection and close it again,
+            // which reached the user as "Remote peer closed the connection (EOF)".
+            if (!forceRedeploy && expectedStamp.Length > 0 && runningStamp == expectedStamp && IsAgentListening(serial))
             {
                 var (ready, endpoints) = WaitForDaemonReady(serial, 0.5);
                 if (ready) return endpoints;
             }
 
             return DeployAndLaunch(serial, auth.KeyHex, expectedStamp);
+        }
+
+        /// <summary>
+        /// True when the agent's abstract socket exists on the phone (`@seam_uhid` in
+        /// <c>/proc/net/unix</c>), i.e. when a forwarded TCP connection will actually be served.
+        /// </summary>
+        public bool IsAgentListening(string serial)
+        {
+            string? output = TryRun(new[]
+            {
+                "-s", serial, "shell",
+                "grep -c " + SeamWireProtocol.UsbAbstractSocketName + " /proc/net/unix 2>/dev/null || true"
+            });
+
+            return int.TryParse((output ?? string.Empty).Trim(), out int matches) && matches > 0;
         }
 
         private List<(string, string, int)> DeployAndLaunch(string serial, string authKeyHex, string stamp)

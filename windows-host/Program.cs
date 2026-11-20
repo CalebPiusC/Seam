@@ -201,10 +201,10 @@ namespace Seam.WindowsHost
             $"  adb used: {adbPath}\n" +
             "  1. Enable Developer options -> USB debugging on the phone.\n" +
             "  2. Plug the cable in and accept the 'Allow USB debugging?' prompt ON THE PHONE.\n" +
-            "  3. Windows usually needs an OEM ADB USB driver; many vendors ship none.\n" +
-            "     Wireless debugging avoids the driver entirely (adb pair / adb connect), and\n" +
-            "     --connect <phone-ip>:27186 bypasses adb once the agent is running.\n" +
-            "  4. Run  seam-host.exe --diagnose  to see which adb was picked and what it reports.";
+            "  3. " + ConnectionDiagnosis.Guidance(ConnectionProblem.NoDevice) + "\n" +
+            "  4. Wireless: this host dials adb forwards over USB; it does not create a wireless\n" +
+            "     debugging pairing. --connect <phone-ip>:27186 works once the agent is running.\n" +
+            "  5. Run  seam-host.exe --diagnose  to see which adb was picked and what it reports.";
 
         /// <summary>Turns adb device states into instructions instead of a bare list.</summary>
         private static string DescribeDeviceProblem(List<AdbDevice> devices)
@@ -225,8 +225,9 @@ namespace Seam.WindowsHost
                         lines.Add("       or run  adb kill-server  and try again.");
                         break;
                     case "no permissions":
-                        lines.Add("    -> Windows denied access to the USB device: install the OEM ADB driver,");
-                        lines.Add("       or use Wireless debugging (no driver needed).");
+                        // This state really is Windows refusing the device, so a driver is the fix.
+                        lines.Add("    -> Windows denied access to the USB device: install the OEM ADB USB");
+                        lines.Add("       driver for this phone model, then re-plug the cable.");
                         break;
                     default:
                         lines.Add("    -> Unknown state; run  adb devices -l  and  seam-host.exe --diagnose.");

@@ -76,8 +76,10 @@ a machine you trust.
 3. Plug the phone in and **accept the prompt on the phone** (tick *Always allow from this
    computer* if you trust the PC).
 
-Wireless Debugging (**Developer options → Wireless debugging**) is an alternative that
-avoids OEM ADB driver problems entirely.
+Wireless Debugging (**Developer options → Wireless debugging**) is an alternative when the USB
+driver will not cooperate. SEAM does not create that pairing itself: pair once with the bundled
+adb (the three commands are in `MANUAL-VERIFICATION.md` §2.7), press **Refresh**, then
+**Connect** - SEAM uses the Wi-Fi transport adb already established.
 
 ---
 

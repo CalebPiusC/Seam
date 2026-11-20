@@ -50,6 +50,7 @@ namespace Seam.WindowsHost.Testing
             TestLoopbackHandshakeAndFrames();
             TestResourceResolution();
             TestDesktopSupport();
+            TestConnectionGuidance();
 
             Console.WriteLine();
             Console.WriteLine($"=== {_passed} passed, {_failed} failed, {_skipped} skipped ===");
@@ -415,6 +416,127 @@ namespace Seam.WindowsHost.Testing
             {
                 TryDelete(scratch);
             }
+        }
+
+
+        /// <summary>
+        /// The USB/wireless guidance split. These are the rules the Home page follows, tested
+        /// without a phone or a desktop: the old window showed one paragraph for every empty
+        /// device list, which told users to install an OEM USB driver even when their phone was
+        /// simply not plugged in, and pointed at wireless debugging this host cannot set up.
+        /// </summary>
+        private static void TestConnectionGuidance()
+        {
+            Console.WriteLine("\n[6] Connection guidance (USB vs wireless)");
+
+            var none = new List<AdbDevice>();
+            Check("guidance: missing adb is its own condition",
+                ConnectionDiagnosis.ClassifyDevices(adbAvailable: false, none) == ConnectionProblem.AdbMissing);
+            Check("guidance: empty device list means no device",
+                ConnectionDiagnosis.ClassifyDevices(adbAvailable: true, none) == ConnectionProblem.NoDevice);
+
+            var unauthorized = new List<AdbDevice>
+            {
+                new AdbDevice { Serial = "R58M12ABCDE", State = "unauthorized", Model = "SM_A055F" }
+            };
+            Check("guidance: adb 'unauthorized' maps to the authorise step",
+                ConnectionDiagnosis.ClassifyDevices(true, unauthorized) == ConnectionProblem.Unauthorized);
+
+            var offline = new List<AdbDevice>
+            {
+                new AdbDevice { Serial = "R58M12ABCDE", State = "offline", Model = "SM_A055F" }
+            };
+            Check("guidance: adb 'offline' maps to the stale-cable step",
+                ConnectionDiagnosis.ClassifyDevices(true, offline) == ConnectionProblem.Offline);
+
+            var authorizedUsb = new List<AdbDevice>
+            {
+                new AdbDevice { Serial = "R58M12ABCDE", State = "device", Model = "Pixel_8" }
+            };
+            Check("guidance: an authorised USB phone is ready, not a problem",
+                ConnectionDiagnosis.ClassifyDevices(true, authorizedUsb) == ConnectionProblem.None);
+
+            var authorizedWireless = new List<AdbDevice>
+            {
+                new AdbDevice { Serial = "192.168.1.42:5555", State = "device", Model = "Pixel_8" }
+            };
+            Check("guidance: an authorised Wi-Fi transport is ready, not a problem",
+                ConnectionDiagnosis.ClassifyDevices(true, authorizedWireless) == ConnectionProblem.None);
+
+            var deadWireless = new List<AdbDevice>
+            {
+                new AdbDevice { Serial = "192.168.1.42:5555", State = "offline", Model = "Pixel_8" }
+            };
+            Check("guidance: a Wi-Fi address that stopped answering is its own condition",
+                ConnectionDiagnosis.ClassifyDevices(true, deadWireless) == ConnectionProblem.WirelessUnavailable);
+
+            // ---- the wording itself ----
+            string noDevice = ConnectionDiagnosis.Guidance(ConnectionProblem.NoDevice);
+            Check("guidance: no-device text asks for USB debugging and the ALLOW prompt",
+                noDevice.Contains("USB debugging", StringComparison.Ordinal) &&
+                noDevice.Contains("ALLOW", StringComparison.Ordinal));
+            Check("guidance: no-device text does not prescribe an OEM driver",
+                !noDevice.Contains("OEM", StringComparison.OrdinalIgnoreCase));
+
+            string wireless = ConnectionDiagnosis.Guidance(ConnectionProblem.WirelessUnavailable);
+            Check("guidance: unreachable Wi-Fi text offers adb connect or the cable, never a driver",
+                wireless.Contains("adb connect", StringComparison.OrdinalIgnoreCase) &&
+                wireless.Contains("cable", StringComparison.OrdinalIgnoreCase) &&
+                !wireless.Contains("driver", StringComparison.OrdinalIgnoreCase));
+
+            string unauthorized = ConnectionDiagnosis.Guidance(ConnectionProblem.Unauthorized);
+            Check("guidance: the USB authorise text never mentions wireless",
+                !unauthorized.Contains("wireless", StringComparison.OrdinalIgnoreCase) &&
+                !unauthorized.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase));
+
+            Check("guidance: every condition has its own headline",
+                ConnectionDiagnosis.Headline(ConnectionProblem.NoDevice) !=
+                ConnectionDiagnosis.Headline(ConnectionProblem.Unauthorized) &&
+                ConnectionDiagnosis.Headline(ConnectionProblem.AgentClosed) !=
+                ConnectionDiagnosis.Headline(ConnectionProblem.HandshakeFailed));
+
+            Check("guidance: every condition has a headline, a sentence and a one-liner",
+                AllHaveText());
+
+            // ---- classification of our own connect failures ----
+            Check("guidance: the transport EOF is reported as the phone closing the session",
+                ConnectionDiagnosis.ClassifyFailure("Remote peer closed the connection (EOF)") ==
+                ConnectionProblem.AgentClosed);
+            Check("guidance: an agent that never started is its own condition",
+                ConnectionDiagnosis.ClassifyFailure(
+                    "Timed out waiting for the detached seam-agent daemon.\n--- agent log ---\nnothing") ==
+                ConnectionProblem.AgentNotReady);
+            Check("guidance: a rejected handshake is its own condition",
+                ConnectionDiagnosis.ClassifyFailure("Server HMAC mismatch during handshake") ==
+                ConnectionProblem.HandshakeFailed);
+            Check("guidance: an unplugged phone during connect maps to no-device",
+                ConnectionDiagnosis.ClassifyFailure(
+                    "The phone (Pixel 8) is no longer visible to adb. Re-plug the USB cable and press Connect again.") ==
+                ConnectionProblem.NoDevice);
+            Check("guidance: an unknown failure still gets user text",
+                ConnectionDiagnosis.Headline(ConnectionDiagnosis.ClassifyFailure("something odd")) ==
+                ConnectionDiagnosis.Headline(ConnectionProblem.TransportError) &&
+                ConnectionDiagnosis.Guidance(ConnectionProblem.TransportError).Contains("Activity", StringComparison.Ordinal));
+        }
+
+        /// <summary>Every reported condition must be printable in the window.</summary>
+        private static bool AllHaveText()
+        {
+            foreach (ConnectionProblem problem in Enum.GetValues<ConnectionProblem>())
+            {
+                if (problem == ConnectionProblem.None)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(ConnectionDiagnosis.Headline(problem)) ||
+                    string.IsNullOrWhiteSpace(ConnectionDiagnosis.Guidance(problem)) ||
+                    string.IsNullOrWhiteSpace(ConnectionDiagnosis.ShortGuidance(problem)))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private static string CreateScratchDir(string name)

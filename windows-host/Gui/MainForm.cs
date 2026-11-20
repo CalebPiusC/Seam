@@ -1146,10 +1146,10 @@ namespace Seam.WindowsHost.Gui
                     _banner.HideBanner();
                     break;
                 case SessionState.Unauthorized:
-                    _banner.ShowWarning(detail);
+                    ShowProblemBanner(ConnectionProblem.Unauthorized, warning: true);
                     break;
                 case SessionState.Error:
-                    _banner.ShowError(detail);
+                    ShowProblemBanner(ConnectionDiagnosis.ClassifyFailure(detail), warning: false);
                     break;
                 case SessionState.Connecting:
                     _banner.HideBanner();
@@ -1157,7 +1157,8 @@ namespace Seam.WindowsHost.Gui
                 default:
                     if (!string.IsNullOrEmpty(detail) && detail.StartsWith("The phone disconnected", StringComparison.Ordinal))
                     {
-                        _banner.ShowWarning(detail);
+                        // The cause stays in Activity; the banner shows what it means and what to do.
+                        ShowProblemBanner(ConnectionDiagnosis.ClassifyFailure(detail), warning: true);
                     }
                     else
                     {
@@ -1173,6 +1174,20 @@ namespace Seam.WindowsHost.Gui
             if (changed)
             {
                 PerformLayout();
+            }
+        }
+
+        /// <summary>One line: what SEAM found, then the single next action.</summary>
+        private void ShowProblemBanner(ConnectionProblem problem, bool warning)
+        {
+            string text = ConnectionDiagnosis.Headline(problem) + " - " + ConnectionDiagnosis.ShortGuidance(problem);
+            if (warning)
+            {
+                _banner.ShowWarning(text);
+            }
+            else
+            {
+                _banner.ShowError(text);
             }
         }
 
@@ -1220,7 +1235,9 @@ namespace Seam.WindowsHost.Gui
             if (_session.IsConnected && _device != null)
             {
                 _lblStateTitle.Text = SessionController.DeviceLabel(_device);
-                _lblStateDetail.Text = "Connected over USB via ADB forward, authenticated with a mutual HMAC-SHA256 key.";
+                _lblStateDetail.Text = _device.IsWirelessAdb
+                    ? "Connected over Wi-Fi through adb, authenticated with a mutual HMAC-SHA256 key."
+                    : "Connected over USB via ADB forward, authenticated with a mutual HMAC-SHA256 key.";
                 _lblDeviceMeta.Text = _device.Serial + " · " + (_session.Endpoint ?? "adb forward");
             }
             else if (_session.State == SessionState.Connecting)
@@ -1229,41 +1246,65 @@ namespace Seam.WindowsHost.Gui
                 _lblStateDetail.Text = "Pushing and starting the SEAM agent on the phone. The first time takes a few seconds.";
                 _lblDeviceMeta.Text = _device?.Serial ?? "starting the agent";
             }
-            else if (devices.Count == 0)
+            else if (_session.State == SessionState.Error)
             {
-                _lblStateTitle.Text = "No phone detected";
-                _lblStateDetail.Text = "Enable USB debugging on the phone, plug the cable in and tap ALLOW. " +
-                                       "No prompt? Install the OEM ADB driver, or use Wireless debugging.";
-                _lblDeviceMeta.Text = _session.AdbPath == null
-                    ? "adb is missing - reinstall SEAM"
-                    : "adb sees no device";
+                // A failed attempt: say what it means, keep the exact error one line down and in Activity.
+                ConnectionProblem problem = ConnectionDiagnosis.ClassifyFailure(_session.Detail);
+                _lblStateTitle.Text = ConnectionDiagnosis.Headline(problem);
+                _lblStateDetail.Text = ConnectionDiagnosis.Guidance(problem);
+                _lblDeviceMeta.Text = Shorten(_session.Detail, 110);
             }
             else
             {
-                AdbDevice device = _device ?? devices[0];
-                _lblStateTitle.Text = SessionController.DeviceLabel(device);
-                if (!device.IsAuthorized)
+                ConnectionProblem problem = ConnectionDiagnosis.ClassifyDevices(_session.AdbPath != null, devices);
+
+                if (problem == ConnectionProblem.None)
                 {
-                    _lblStateDetail.Text = string.IsNullOrEmpty(_session.Detail)
-                        ? "Unlock the phone and tap ALLOW on the \"Allow USB debugging?\" prompt."
-                        : _session.Detail;
-                }
-                else if (devices.Count > 1)
-                {
-                    _lblStateDetail.Text = devices.Count + " phones detected. Connect uses the first authorised one; " +
-                                           "unplug the others to choose a different phone.";
+                    // adb already sees an authorised phone on its own transport (USB or a TCP
+                    // transport another tool created); all that is left is the button.
+                    AdbDevice ready = _device ?? devices[0];
+                    _lblStateTitle.Text = SessionController.DeviceLabel(ready);
+                    _lblStateDetail.Text = devices.Count > 1
+                        ? devices.Count + " phones detected. Connect uses the first authorised one; " +
+                          "unplug the others to choose a different phone."
+                        : "Ready. Connect pushes the agent and starts the session.";
+                    _lblDeviceMeta.Text = ready.Serial + " · " +
+                        (ready.IsWirelessAdb ? "Wi-Fi · authorised" : "USB · authorised");
                 }
                 else
                 {
-                    _lblStateDetail.Text = "Ready. Connect pushes the agent and starts the session.";
-                }
+                    _lblStateTitle.Text = ConnectionDiagnosis.Headline(problem);
+                    _lblStateDetail.Text = ConnectionDiagnosis.Guidance(problem);
 
-                _lblDeviceMeta.Text = device.Serial + " · " + (device.IsAuthorized ? "USB · authorised" : device.State);
+                    string hint = ConnectionDiagnosis.TechnicalHint(problem);
+                    if (problem == ConnectionProblem.Unauthorized && devices.Count > 0)
+                    {
+                        hint = (devices[0].Model ?? devices[0].Serial) + " · adb state: " + devices[0].State;
+                    }
+                    else if (problem == ConnectionProblem.WirelessUnavailable && devices.Count > 0)
+                    {
+                        hint = devices[0].Serial + " · " + hint;
+                    }
+
+                    _lblDeviceMeta.Text = hint;
+                }
             }
 
             _arrangement.Edge = _settings.Edge;
             _arrangement.IsConnected = _session.IsConnected;
             _arrangement.RoutingToPhone = _session.IsRouting;
+        }
+
+        /// <summary>First line of a possibly multi-line error, cut to a readable length.</summary>
+        private static string Shorten(string? text, int limit)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            string firstLine = text.Split('\n')[0].Trim();
+            return firstLine.Length <= limit ? firstLine : firstLine.Substring(0, limit - 1) + "…";
         }
 
         private void UpdateRoutingCard()

@@ -178,6 +178,26 @@ Record: which of 2.1–2.7 failed, the exact window message, and the output of
 problem moment are the most useful evidence, because everything above is about what a person
 sees rather than what a log says.
 
+### 2.9 What the window says when Connect cannot proceed
+
+Each row is one state the code can detect. The headline is what the Home page shows; the
+second line is the advice under it. No row may mention a driver unless the row says so.
+
+| Situation | Headline | Must mention |
+|---|---|---|
+| adb.exe missing from the app folder | SEAM cannot find adb | reinstall, `--diagnose` |
+| no phone visible to adb | No phone detected | USB debugging, the ALLOW prompt |
+| phone plugged in, not authorised | The phone has not authorised this PC | ALLOW on the phone |
+| adb says `offline` | The phone stopped responding | unplug, re-plug, Connect |
+| a saved Wi-Fi address stopped answering | The phone is not answering over Wi-Fi | `adb connect` or the cable |
+| Connect pressed, agent never came up | The SEAM agent did not start on the phone | Diagnostics page for its log |
+| Connect pressed, socket closed immediately | The phone closed the connection | press Connect again |
+| pair code changed since the last session | The pairing keys do not match | Connect re-installs the agent |
+
+Pass: the row that matches the real situation is the one shown, the sentence underneath says
+what to do, and nothing tells a USB user to install an OEM driver unless Windows itself is the
+problem (phone flagged in Device Manager).
+
 ## 3. Phone authorisation flow
 
 1. Phone connected by USB, USB debugging on, **not yet authorised**.

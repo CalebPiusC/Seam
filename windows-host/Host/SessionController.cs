@@ -236,6 +236,13 @@ namespace Seam.WindowsHost.Host
             }
         }
 
+        /// <summary>
+        /// How long a freshly dialled session may stay silent before the attempt is reported as
+        /// "connected but quiet". A close inside this window is treated as a failed attempt, not
+        /// as a live session that dropped.
+        /// </summary>
+        private const int FirstFrameTimeoutMs = 3000;
+
         private void ConnectWorker(AdbDevice? device)
         {
             AdbBootstrapper adb = _adb!;
@@ -271,45 +278,19 @@ namespace Seam.WindowsHost.Host
                 // Fingerprint only: the private key never reaches the UI or a log file.
                 Emit("[Auth] pairing key fingerprint " + auth.KeyFingerprint);
 
-                List<(string iface, string ip, int port)> endpoints = adb.BootstrapSession(target, auth);
-                foreach ((string iface, string ip, int port) in endpoints)
+                SessionAttempt attempt = OpenSession(adb, target, auth, forceRedeploy: false);
+                if (attempt.Connection == null)
                 {
-                    Emit($"[Boot] agent Wi-Fi endpoint {ip}:{port} ({iface})");
+                    Emit("[Link] first attempt failed (" + attempt.Failure + ") - restarting the agent on the phone once.");
+                    attempt = OpenSession(adb, target, auth, forceRedeploy: true);
                 }
 
-                int port2 = adb.SetupUsbForward(target.Serial);
-                Emit($"[Boot] adb forward tcp:{port2} -> localabstract:seam_uhid");
-
-                var ready = new ManualResetEventSlim(false);
-                connection = SeamConnection.Connect("127.0.0.1", port2, auth);
-                connection.DisplayInfoReceived += info =>
+                if (attempt.Connection == null)
                 {
-                    Display = info;
-                    ready.Set();
-                    DisplayInfoReceived?.Invoke(info);
-                    StatsChanged?.Invoke();
-                };
-                connection.EdgeReturnReceived += evt =>
-                {
-                    _capture?.HandleEdgeReturn(evt);
-                    StatsChanged?.Invoke();
-                };
-                connection.ClipboardReceived += text =>
-                {
-                    Emit("[Clip] <- Android: " + Truncate(text));
-                };
-                connection.Closed += reason =>
-                {
-                    Emit("[Link] closed: " + reason);
-                    HandleConnectionClosed(reason);
-                };
-
-                connection.Start();
-
-                if (!ready.Wait(3000))
-                {
-                    Emit("[Warn] no DISPLAY_INFO within 3 s; continuing anyway.");
+                    throw new InvalidOperationException(attempt.Failure ?? "The phone did not accept the session.");
                 }
+
+                connection = attempt.Connection;
 
                 lock (_gate)
                 {
@@ -337,6 +318,110 @@ namespace Seam.WindowsHost.Host
                 Emit("[Error] " + ex.Message);
                 SetState(SessionState.Error, ex.Message);
             }
+        }
+
+        /// <summary>
+        /// One connect attempt: start (or reuse) the agent, open the adb forward, dial it and wait
+        /// for the first frame.
+        ///
+        /// A close that arrives before the session is published is returned as a failed attempt
+        /// instead of being reported as "connected, then disconnected", and
+        /// <paramref name="forceRedeploy"/> pushes and relaunches the agent so a stale agent, a
+        /// dead listener or a rotated pairing key can clear itself.
+        /// </summary>
+        private SessionAttempt OpenSession(
+            AdbBootstrapper adb, AdbDevice target, SeamAuthenticator auth, bool forceRedeploy)
+        {
+            var attempt = new SessionAttempt();
+
+            try
+            {
+                List<(string iface, string ip, int port)> endpoints = adb.BootstrapSession(target, auth, forceRedeploy);
+                foreach ((string iface, string ip, int port) in endpoints)
+                {
+                    Emit($"[Boot] agent Wi-Fi endpoint {ip}:{port} ({iface})");
+                }
+
+                int port2 = adb.SetupUsbForward(target.Serial);
+                Emit($"[Boot] adb forward tcp:{port2} -> localabstract:seam_uhid");
+
+                var ready = new ManualResetEventSlim(false);
+                var closed = new ManualResetEventSlim(false);
+                var closeGate = new object();
+                string? earlyClose = null;
+
+                SeamConnection connection = SeamConnection.Connect("127.0.0.1", port2, auth);
+
+                connection.DisplayInfoReceived += info =>
+                {
+                    Display = info;
+                    ready.Set();
+                    DisplayInfoReceived?.Invoke(info);
+                    StatsChanged?.Invoke();
+                };
+                connection.EdgeReturnReceived += evt =>
+                {
+                    _capture?.HandleEdgeReturn(evt);
+                    StatsChanged?.Invoke();
+                };
+                connection.ClipboardReceived += text =>
+                {
+                    Emit("[Clip] <- Android: " + Truncate(text));
+                };
+                connection.Closed += reason =>
+                {
+                    bool published;
+                    lock (_gate) { published = ReferenceEquals(_connection, connection); }
+
+                    if (published)
+                    {
+                        Emit("[Link] closed: " + reason);
+                        HandleConnectionClosed(reason);
+                        return;
+                    }
+
+                    // Not handed to the session yet: this attempt failed, and the caller retries.
+                    lock (closeGate) { earlyClose = reason; }
+                    Emit("[Link] the phone closed the connection before the session was ready: " + reason);
+                    closed.Set();
+                    ready.Set();
+                };
+
+                connection.Start();
+
+                WaitHandle.WaitAny(new[] { ready.WaitHandle, closed.WaitHandle }, FirstFrameTimeoutMs);
+
+                string? failure;
+                lock (closeGate) { failure = earlyClose; }
+
+                if (failure != null)
+                {
+                    try { connection.Dispose(); } catch { /* already closed */ }
+                    attempt.Failure = failure;
+                    return attempt;
+                }
+
+                if (!ready.IsSet)
+                {
+                    Emit("[Warn] no DISPLAY_INFO within 3 s; continuing anyway.");
+                }
+
+                attempt.Connection = connection;
+                return attempt;
+            }
+            catch (Exception ex)
+            {
+                Emit("[Error] " + ex.Message);
+                attempt.Failure = ex.Message;
+                return attempt;
+            }
+        }
+
+        /// <summary>Outcome of one <see cref="OpenSession"/> call.</summary>
+        private sealed class SessionAttempt
+        {
+            public SeamConnection? Connection { get; set; }
+            public string? Failure { get; set; }
         }
 
         public void Disconnect()
