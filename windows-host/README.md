@@ -181,6 +181,7 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | Desktop window | **Built, rendered and opened** by CI — `--ui-smoke` creates the real `MainForm`, lays it out and renders it to a PNG artifact; a separate step launches it with no arguments and proves the `Application.Run` message loop answers, that `WM_CLOSE` closes it with exit code 0, and that no process is left behind. The PE subsystem is asserted to be GUI, so double-clicking cannot open a console |
 | USB control on real hardware | **Verified on a physical machine** (HP EliteBook 830 G6, Windows 11 x64, Samsung Galaxy A05 / Android 15): bundled adb discovery, agent push/start, device detection, mutual HMAC-SHA256, mouse + keyboard control, Ctrl+Alt+Q. That verification was done with the **console** build; the desktop window drives the same `SessionController` primitives but has not itself been exercised against a phone |
 | Desktop window against a phone | **Not demonstrated** — nobody has used the window with a phone attached; the launch/close lifecycle is CI-verified, the phone flows are not. See `MANUAL-VERIFICATION.md` section 2 |
+| Wireless (Wi-Fi) session | **Not physically verified** — mDNS discovery, automatic `adb connect`, reconnection and Disconnect-suppression are implemented and covered by 17 offline self-test checks; no Wi-Fi session has been run on hardware yet |
 | Windows low-level hooks, `ClipCursor`, DPI | **Executed on real hardware** in console mode; the same `WindowsInputCapture` instance is created by the window |
 
 ---
@@ -290,9 +291,9 @@ control immediately. Press `q` in the console to quit, `r` to force a return.
 
 | Capability | Implemented | Verified |
 |---|---|---|
-| ADB device discovery (`adb devices -l` parsing) | yes | no |
-| Agent deploy/launch + ready-marker wait | yes | no |
-| `adb forward tcp:0 → localabstract:seam_uhid` | yes | no |
+| ADB device discovery (`adb devices -l` parsing) | yes | **yes** (self-test parsing + `--diagnose` on Windows CI) |
+| Agent deploy/launch + ready-marker wait | yes | physical USB run (console build); window untested |
+| `adb forward tcp:0 → localabstract:seam_uhid` | yes | physical USB run (console build); window untested |
 | Mutual HMAC-SHA256 handshake | yes | **yes** (byte-exact, both directions) |
 | `DISPLAY_INFO` receive + parse | yes | **yes** |
 | `PING`/`PONG` heartbeat + RTT plumbing | yes | **yes** |
@@ -304,10 +305,15 @@ control immediately. Press `q` in the console to quit, `r` to force a return.
 | Edge crossing + pointer pinning | yes | no |
 | Clipboard host→Android | frame + `--` | protocol yes; no monitor |
 | Clipboard Android→host | parse + log | protocol yes; no pasteboard write |
-| Wi-Fi TCP transport | via `--connect` | no |
-| Wi-Fi UDP fast path | no | — |
-| Wi-Fi/UDP discovery, mDNS pairing | no | — |
-| Tray UI, packaging, signing | no | — |
+| Wireless discovery (`adb mdns services`) + automatic `adb connect` | yes | logic unit-tested (17 checks); **no hardware run** |
+| Automatic reconnection after a Wi-Fi drop | yes | logic unit-tested; **no hardware run** |
+| Disconnect suppresses automatic reconnect | yes | logic unit-tested |
+| Initial pairing (`adb pair`, phone's code) | documented one-time step | manual by design — Android shows the code only on the phone |
+| Stale-agent / early-close recovery on connect | yes | logic unit-tested; **no hardware run** |
+| Connection states in the window (`SessionState` + guidance) | yes | text/state mapping unit-tested |
+| Installer, portable ZIP, upgrade, uninstall | yes | **yes** (CI installs, re-runs, upgrades, uninstalls) |
+| Code signing / auto-update | no | — (SmartScreen warning documented) |
+| System-tray icon | no | by design: closing the window ends the session |
 
 ---
 
@@ -400,7 +406,9 @@ windows-host/
 │   ├── StatusPill.cs / PillButton.cs / AlertBanner.cs / LogView.cs   small themed controls
 │   └── Theme.cs                   graphite palette, Segoe UI Variable ramp, card panel
 ├── Host/
-│   ├── SessionController.cs       one place that owns adb, auth, session and input hooks
+│   ├── SessionController.cs       one place that owns adb, auth, session, wireless autopilot, hooks
+│   ├── WirelessDiscovery.cs       adb mDNS parsing + the autopilot rule (pure, unit-tested)
+│   ├── ConnectionDiagnosis.cs     detected condition -> headline/advice shown in the window
 │   ├── DiagnosticsReport.cs       shared report (CLI + window)
 │   ├── AppLayout.cs               app-relative adb/agent discovery
 │   └── UiSettings.cs              %APPDATA%\SEAM\ui-settings.json
@@ -411,7 +419,11 @@ windows-host/
 ├── Bootstrap/AdbBootstrapper.cs   adb discovery, deploy, launch, forward
 ├── Input/WindowsKeyTable.cs       scan code → HID table, 6KRO state
 ├── Input/WindowsInputCapture.cs   LL hooks, edge crossing, pointer pinning
-└── Testing/                       LoopbackAgent (fixture) + SelfTest (oracle-driven)
+├── Testing/                       LoopbackAgent (fixture) + SelfTest (oracle-driven, 80 checks)
+├── installer/SEAM.iss             Inno Setup 6 installer (start-menu, Installed apps, uninstaller)
+├── packaging/Get-Adb.ps1          fetch/manage Android Platform-Tools (PS 5.1-compatible)
+├── INSTALL.md                     user-facing install, wireless and troubleshooting guide
+└── MANUAL-VERIFICATION.md         the physical acceptance checklist
 
 tools/
 ├── agent_sim.py                   device-side simulator (test fixture)

@@ -68,10 +68,34 @@ USING THE APPLICATION
   6. Ctrl + Alt + Q returns control to Windows at any time. Disconnect (or unplug the
      cable) returns control as well.
   7. Unplug and re-plug: SEAM notices the phone again, and the Connect button becomes
-     Reconnect. Settings lets you turn on "connect automatically".
+     Reconnect. "Connect automatically" is on by default (Settings), so an authorised
+     phone is picked up on its own - over USB or over Wi-Fi.
 
 Settings live in %APPDATA%\SEAM\ui-settings.json (edge, auto-connect, activity length).
 Nothing there is secret.
+
+WI-FI INSTEAD OF A CABLE (WIRELESS DEBUGGING)
+---------------------------------------------
+SEAM finds phones on the local network the same way the macOS host does, but Android
+only allows it after one authorised pairing:
+
+  1. Phone and PC on the same network. Phone: Developer options -> Wireless debugging
+     -> on. Android 11 or newer is required.
+  2. One-time pairing, because only the phone can display the code: on the phone tap
+     "Pair device with pairing code", then on the PC run
+         "C:\Program Files\SEAM\platform-tools\adb.exe" pair <phone-ip>:<port>
+     and type the six-digit code. This is the ONLY step that needs a command prompt,
+     and it is never needed again for this PC.
+  3. From then on SEAM does the rest by itself: it asks adb for the endpoints the phone
+     advertises (adb mdns services), connects the one it is allowed to use, starts the
+     agent over it and shows Connected over Wi-Fi.
+  4. If Wi-Fi drops and comes back, or the phone sleeps and wakes, SEAM re-dials the
+     saved endpoint within about half a minute. Nothing to press.
+  5. Press Disconnect to stop: SEAM will not reconnect until you press Connect again.
+
+If the phone is advertising itself but not paired yet, the window says exactly that
+("Waiting for the first wireless pairing") instead of pretending it can connect.
+Wi-Fi sessions still go through adb, so adb.exe and Wireless debugging must stay on.
 
 IF SOMETHING DOES NOT WORK
 --------------------------
@@ -81,8 +105,9 @@ The window shows inline messages for the three cases that actually happen:
                     "adb kill-server" then re-plug the cable.
   Connection error  Read the message; the Diagnostics button shows every path SEAM
                     searched and what adb reports.
-  No phone detected Check the cable and the OEM USB driver, or use Wireless debugging
-                    (no driver needed).
+  No phone detected USB debugging is off, the phone is not plugged in, or the cable is
+                    charge-only. A USB driver only matters if Windows itself flags the
+                    phone in Device Manager (warning triangle).
 
 "SEAM diagnostics" (Start Menu) or this console command prints the same report:
 
@@ -119,7 +144,10 @@ hooks - input pauses there by design.
 
 WHAT IS NOT IMPLEMENTED
 -----------------------
-Screen mirroring, QR-code pairing and remote control of the phone's screen. SEAM shares
+Screen mirroring, QR-code pairing and remote control of the phone's screen. Android
+requires the pairing code to be typed on the PC side, so there is no one-click pairing.
+Unlike the macOS host, Windows has no direct Wi-Fi transport of its own: a cable-free
+session still runs through adb, so it needs Wireless debugging and adb.exe running. SEAM shares
 one mouse and one keyboard with the phone's existing Android UI; it does not stream
 video. There is no system-tray icon: closing the window ends the session and removes the
 hooks, by design.

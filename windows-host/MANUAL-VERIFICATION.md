@@ -13,6 +13,20 @@ Run this list on the machine you reported problems from. Every step states the e
 and the result that counts as a pass. Nothing below has been executed by the agent — this is
 the list to execute.
 
+**Current status, stated plainly.**
+
+| Area | Status |
+|---|---|
+| USB session through the desktop window | not yet run on hardware (the console build was) |
+| Wireless discovery, pairing, automatic reconnect, Disconnect (§2.7, §2.8b) | **not run at all** — implemented and covered by 17 offline self-test checks only |
+| Window layout at 100% / 125% DPI | 100% exercised by CI at 96 dpi; **125% not verified** |
+| Installer, upgrade, uninstall | CI-verified on a clean Windows runner |
+| Windows 10 (as opposed to the Windows Server image CI uses) | not verified |
+
+Nothing in this repository claims a physically verified Wi-Fi session. The Galaxy A05 report
+that prompted the guidance work was a USB authorisation/message problem, not evidence that the
+wireless implementation is broken — and neither is evidence that it works.
+
 ---
 
 ## 0. Record what you are testing

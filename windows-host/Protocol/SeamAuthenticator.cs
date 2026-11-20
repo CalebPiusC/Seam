@@ -44,11 +44,6 @@ namespace Seam.WindowsHost.Protocol
             Key = key;
         }
 
-        /// <summary>
-        /// Loads or creates the persistent 256-bit pairing key.
-        /// macOS stores ~/.seam/auth_key; we mirror that layout at %USERPROFILE%\.seam\auth_key
-        /// so the file name and format match the other host implementation.
-        /// </summary>
         /// <summary>The on-disk pairing key location (%USERPROFILE%\.seam\auth_key).</summary>
         public static string KeyStorePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".seam", "auth_key");
@@ -60,6 +55,11 @@ namespace Seam.WindowsHost.Protocol
         public string KeyFingerprint =>
             Convert.ToHexString(SHA256.HashData(Key)).Substring(0, 16).ToLowerInvariant();
 
+        /// <summary>
+        /// Loads or creates the persistent 256-bit pairing key.
+        /// macOS stores ~/.seam/auth_key; we mirror that layout at %USERPROFILE%\.seam\auth_key
+        /// so the file name and format match the other host implementation.
+        /// </summary>
         public static SeamAuthenticator LoadOrCreatePersistentKey()
         {
             string keyFile = KeyStorePath;

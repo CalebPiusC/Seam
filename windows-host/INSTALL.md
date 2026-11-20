@@ -11,6 +11,13 @@ Both contain the same files: the self-contained host (`seam-host.exe` plus the .
 runtime DLLs), `seam-agent.jar`, `platform-tools\adb.exe`, and the documentation below.
 **You never need to install .NET, edit `PATH`, or copy anything into `%TEMP%`.**
 
+## Supported Windows versions
+
+Windows 10 version 22H2 or later, or Windows 11 - **64-bit (x64) only**. The build targets
+`net8.0-windows` and is published self-contained, so no .NET runtime, no Visual Studio and no
+Android SDK is required. ARM64 Windows runs it under emulation but is not a tested target; one
+monitor is assumed for the first run (multi-monitor edge routing is untested).
+
 ---
 
 ## Install with the installer
@@ -76,11 +83,45 @@ a machine you trust.
 3. Plug the phone in and **accept the prompt on the phone** (tick *Always allow from this
    computer* if you trust the PC).
 
-Wireless Debugging (**Developer options → Wireless debugging**) is an alternative when the USB
-driver will not cooperate. Android requires one authorised pairing with a code the phone displays,
-so pair once with the bundled adb (`MANUAL-VERIFICATION.md` §2.7); after that SEAM finds the phone
-on the network by itself (`adb mdns services`), connects it and reconnects when Wi-Fi drops. No
-command prompt is needed for routine reconnection.
+## Wireless debugging (no cable)
+
+Wireless Debugging (**Developer options → Wireless debugging**) is an alternative when no USB
+cable is at hand, or when a vendor USB driver will not cooperate. It is the same workflow the
+macOS host uses, with one unavoidable difference: **Android requires one authorised pairing that
+only the phone can display.**
+
+**Prerequisites.** Phone and PC on the same network (a phone hotspot works), Android 11 or newer,
+Developer options → USB debugging *and* Wireless debugging switched on, `platform-tools\adb.exe`
+present (both packages ship it), and no firewall rule blocking outbound TCP from `adb.exe`.
+
+**Initial pairing, once per PC.** On the phone open *Wireless debugging → Pair device with
+pairing code*; the phone shows an address and a six-digit code. On the PC:
+
+```
+"C:\Program Files\SEAM\platform-tools\adb.exe" pair <phone-ip>:<port>
+"C:\Program Files\SEAM\platform-tools\adb.exe" connect <phone-ip>:<debug-port>
+```
+
+The `connect` step is optional - SEAM performs it itself once the PC is paired. This is the only
+step that needs a command prompt, and it never repeats for the same PC and phone. SEAM cannot
+bypass it: the code is shown only on the phone.
+
+**After pairing, everything is automatic.** SEAM asks adb which Wireless debugging endpoints the
+phone advertises (`adb mdns services`) every few seconds, connects an already-paired one, starts
+the agent over that transport and shows **Connected over Wi-Fi**. If Wi-Fi drops, the phone
+sleeps, or the PC loses the network, SEAM re-dials the saved endpoint by itself - typically
+within half a minute - without a second Connect press.
+
+**Manual disconnect is respected.** Pressing **Disconnect** stops the session *and* the
+automatic reconnection; SEAM stays quiet until **Connect** is pressed again.
+
+**If the phone advertises pairing only,** the window shows **Waiting for the first wireless
+pairing** with the instructions above. It does not claim to be connected and it does not fall
+back to driver advice.
+
+**One-time pairing can be revoked** on the phone at any time (Wireless debugging → paired
+devices), and Android rotates the port on every reboot; SEAM handles the new port because it
+rediscovers the endpoint instead of remembering it.
 
 ---
 
@@ -120,6 +161,20 @@ seam-host.exe --diagnose
 Platform-Tools into `platform-tools\` if the bundled copy is missing or corrupt.
 
 ---
+
+## Known limitations
+
+- **Windows support is experimental.** The host passes its offline self-test, the desktop UI
+  smoke test and the packaging/install/upgrade/uninstall cycle in CI, but it has not been
+  exercised here against a physical phone over Wi-Fi (see `MANUAL-VERIFICATION.md`).
+- **Wireless sessions still use adb.** Unlike the macOS host, the Windows host has no direct
+  Wi-Fi transport of its own, so a cable-free session requires Wireless debugging to stay on and
+  `adb.exe` to be running. Turning Wireless debugging off ends the session.
+- **Pairing needs the phone's code once.** Android exposes it only on the phone's screen.
+- **Not code-signed.** SmartScreen shows a warning on first launch of the installer or the
+  downloaded `seam-host.exe`; there is no automatic update mechanism.
+- **No screen mirroring, no tray icon, no multi-monitor edge choice** - one monitor is assumed.
+- **ARM64 Windows** runs the x64 build under emulation and is not a tested target.
 
 ## For maintainers
 
