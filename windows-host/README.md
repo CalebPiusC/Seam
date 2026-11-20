@@ -150,6 +150,15 @@ connect, activity length). They are separate from the pairing key in
 without a message loop. CI runs it so that "the UI starts on a machine with no phone" and "the
 window can be drawn" are executed facts rather than claims.
 
+**Interactive launch** is exercised separately, because `--ui-smoke` never enters `Application.Run`:
+`.github/scripts/Test-SeamGuiLifecycle.ps1` starts `seam-host.exe` with **no arguments** (what a
+double-click, the Start Menu shortcut and the desktop shortcut all do), waits for a visible
+`WindowsForms` top-level window owned by that process, requires it to answer
+`SendMessageTimeout(WM_NULL)` - which only happens when the message loop is pumping - then posts
+`WM_CLOSE` and asserts exit code 0, no leftover `seam-host.exe`, and a settings file rewritten by
+`OnFormClosing -> SessionController.Dispose`. It also refuses to accept an error dialog (`#32770`)
+as the main window, so a failed start can never be reported as a good one.
+
 ---
 
 ## 1. Honest status up front
@@ -166,9 +175,9 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | `--self-test` | **Passes** — on the build output, on the published app folder, from a path with spaces, and on the binary extracted from the ZIP |
 | Resource discovery (`adb`, agent jar) | **Executed on Windows** — `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path and from the installed `Program Files` folder |
 | Packaging | **Produced and tested** — self-contained `win-x64` folder, `SEAM-Windows-x64.zip`, and `SEAM-Setup-x64.exe`, which CI silently installs, re-runs, upgrades and uninstalls |
-| Desktop window | **Built and rendered** by CI — `--ui-smoke` creates the real `MainForm`, lays it out, renders it to a PNG artifact, and exits; the PE subsystem is asserted to be GUI, so double-clicking cannot open a console |
+| Desktop window | **Built, rendered and opened** by CI — `--ui-smoke` creates the real `MainForm`, lays it out and renders it to a PNG artifact; a separate step launches it with no arguments and proves the `Application.Run` message loop answers, that `WM_CLOSE` closes it with exit code 0, and that no process is left behind. The PE subsystem is asserted to be GUI, so double-clicking cannot open a console |
 | USB control on real hardware | **Verified on a physical machine** (HP EliteBook 830 G6, Windows 11 x64, Samsung Galaxy A05 / Android 15): bundled adb discovery, agent push/start, device detection, mutual HMAC-SHA256, mouse + keyboard control, Ctrl+Alt+Q. That verification was done with the **console** build; the desktop window drives the same `SessionController` primitives but has not itself been exercised against a phone |
-| Desktop window against a phone | **Not demonstrated** — Connect/Disconnect/unauthorised states in the window have only been exercised headlessly |
+| Desktop window against a phone | **Not demonstrated** — nobody has used the window with a phone attached; the launch/close lifecycle is CI-verified, the phone flows are not. See `MANUAL-VERIFICATION.md` section 2 |
 | Windows low-level hooks, `ClipCursor`, DPI | **Executed on real hardware** in console mode; the same `WindowsInputCapture` instance is created by the window |
 
 ---
