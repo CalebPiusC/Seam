@@ -17,7 +17,11 @@ A GitHub Actions workflow builds, tests and packages it on a Windows runner:
 
 When the run finishes, download the artifact:
 
-**Actions → the run → Artifacts → `SEAM-Windows-x64`** → unzip → `SEAM-Windows-x64.zip`.
+**Actions → the run → Artifacts → `SEAM-Windows-x64.zip`** → download → unzip.
+
+> The *Run workflow* button only appears once this file is on the default branch (a GitHub
+> limitation of `workflow_dispatch`). Until then, any push to an `arena/**` branch builds
+> automatically, and the artifact sits on that run.
 
 What the workflow actually does, in order, and fails on the first broken step:
 

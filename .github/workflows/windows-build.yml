@@ -316,6 +316,12 @@ jobs:
           Get-ChildItem $root -File | Sort-Object Name |
             ForEach-Object { "  {0,12:N0}  {1}" -f $_.Length, $_.Name }
 
+          # One annotation with the per-file sizes: visible in the UI and readable from the
+          # check-run API, so the packaged layout can be audited without downloading the ZIP.
+          $manifest = (Get-ChildItem $root -File | Sort-Object Name |
+                       ForEach-Object { "$($_.Name)=$($_.Length)" }) -join ' '
+          Write-Host "::notice title=SEAM-Windows-x64.zip manifest::$manifest" 
+
           Write-Host "`nrunning the packaged binary from the extracted folder..."
           & (Join-Path $root 'seam-host.exe') --self-test
           $code = $LASTEXITCODE
