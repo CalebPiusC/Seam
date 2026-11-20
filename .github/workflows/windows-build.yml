@@ -125,10 +125,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
           $exe = '${{ steps.exe.outputs.path }}'
           Write-Host "running: $exe --self-test"
-          $output = (& $exe --self-test 2>&1 | Out-String)
-          $code = $LASTEXITCODE
+          # Redirect to files, never through a PowerShell pipeline: this binary starts the adb
+          # daemon, and a pipeline would wait for a pipe that a daemon may still hold.
+          $result = Invoke-SeamCommand -Path $exe -ArgumentList '--self-test' -TimeoutSeconds 180
+          $code = $result.ExitCode
+          $output = $result.StdOut + "`n" + $result.StdErr
           Write-Host $output
           Write-Host "self-test exit code: $code"
           if ($code -ne 0) {
