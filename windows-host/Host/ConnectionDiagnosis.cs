@@ -209,7 +209,7 @@ namespace Seam.WindowsHost.Host
 
             ConnectionProblem.PairingRequired =>
                 "Wireless debugging is advertising this phone, but Android has not paired it with " +
-                "this PC yet. Pair once with the code the phone shows; SEAM reconnects on its own afterwards.",
+                "this PC yet. Pair once with the pairing code the phone shows; SEAM reconnects afterwards.",
 
             ConnectionProblem.TransportError =>
                 "Check the cable and the phone's USB mode (file transfer), then press Connect. " +

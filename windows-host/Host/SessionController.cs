@@ -588,7 +588,7 @@ namespace Seam.WindowsHost.Host
                         Emit("[Wi-Fi] the phone advertises pairing, not an established link: " + action.Target);
                         SetState(SessionState.PairingRequired,
                             "Wireless debugging is on, but this PC and the phone are not paired yet. " +
-                            "No driver is involved. Pair once with the code the phone shows.");
+                            "No driver is involved. Pair once with the pairing code the phone shows.");
                     }
                     break;
             }
