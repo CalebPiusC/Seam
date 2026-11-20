@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using Seam.WindowsHost.Bootstrap;
+using Seam.WindowsHost.Host;
 using Seam.WindowsHost.Input;
 using Seam.WindowsHost.Protocol;
 using Seam.WindowsHost.Testing;
@@ -12,6 +13,7 @@ namespace Seam.WindowsHost
     {
         public bool ShowHelp;
         public bool SelfTest;
+        public bool Diagnose;
         public bool Trajectory;
         public bool ForceCapture;
         public string? Connect;
@@ -36,19 +38,32 @@ namespace Seam.WindowsHost
             {
                 return SelfTest.Run();
             }
+            if (options.Diagnose)
+            {
+                return RunDiagnose(options);
+            }
 
             try
             {
-                Console.WriteLine("=== SEAM Windows host — prototype ===");
+                Console.WriteLine("=== SEAM Windows host ===");
+
+                // Resolve every bundled resource from the executable's own directory. This is the
+                // fix for the "adb not found / jar expected in %TEMP%" failures: it never looks at
+                // the current directory and never relies on PATH.
+                AppLayout layout = AppLayout.Resolve(options.AdbPath, options.JarPath);
+                Console.WriteLine($"[Boot ] app dir: {layout.AppRoot}");
+                Console.WriteLine($"[Boot ] adb    : {layout.AdbPath}");
+                Console.WriteLine($"[Boot ] agent  : {layout.AgentJarPath}");
 
                 SeamAuthenticator authenticator = SeamAuthenticator.LoadOrCreatePersistentKey();
-                Console.WriteLine($"[Auth ] pairing key  {Mask(authenticator.KeyHex)}");
+                Console.WriteLine($"[Auth ] pairing key fingerprint {authenticator.KeyFingerprint} " +
+                                  $"(store: {SeamAuthenticator.KeyStorePath})");
 
-                (string host, int port, string label) = ResolveEndpoint(options, authenticator);
+                (string host, int port, string label) = ResolveEndpoint(options, authenticator, layout);
                 Console.WriteLine($"[Link ] {label}");
 
                 using SeamConnection connection = SeamConnection.Connect(host, port, authenticator);
-                Console.WriteLine($"[Auth ] mutual HMAC-SHA256 OK — session 0x{connection.SessionId:X16}");
+                Console.WriteLine($"[Auth ] mutual HMAC-SHA256 OK - session 0x{connection.SessionId:X16}");
 
                 AndroidDisplayInfo? display = null;
                 var displayReady = new ManualResetEventSlim(false);
@@ -71,7 +86,7 @@ namespace Seam.WindowsHost
 
                 if (!displayReady.Wait(3000))
                 {
-                    Console.WriteLine("[WARN] No DISPLAY_INFO within 3 s — continuing anyway.");
+                    Console.WriteLine("[WARN] No DISPLAY_INFO within 3 s - continuing anyway.");
                 }
 
                 if (options.Trajectory)
@@ -80,6 +95,15 @@ namespace Seam.WindowsHost
                 }
 
                 return RunInteractive(connection, display, options);
+            }
+            catch (SeamResourceException ex)
+            {
+                // Missing bundled resources are an installation problem, not a bug: say so once,
+                // point at the diagnostics, and exit with a distinct code.
+                Console.Error.WriteLine($"[FATAL] {ex.Message}");
+                Console.Error.WriteLine();
+                Console.Error.WriteLine("Run `seam-host.exe --diagnose` to see every path SEAM searched.");
+                return 3;
             }
             catch (Exception ex)
             {
@@ -91,7 +115,7 @@ namespace Seam.WindowsHost
         // ---- Connection resolution -------------------------------------------------------
 
         private static (string host, int port, string label) ResolveEndpoint(
-            Options options, SeamAuthenticator authenticator)
+            Options options, SeamAuthenticator authenticator, AppLayout layout)
         {
             if (!string.IsNullOrEmpty(options.Connect))
             {
@@ -105,29 +129,32 @@ namespace Seam.WindowsHost
                         $"direct TCP -> {connect} (bypassing ADB)");
             }
 
-            string jarPath = options.JarPath ?? ResolveAgentJar();
-            Console.WriteLine($"[Boot ] agent jar: {jarPath}");
-
-            var bootstrapper = new AdbBootstrapper(jarPath, options.AdbPath);
-            Console.WriteLine($"[Boot ] adb: {bootstrapper.AdbPath}");
+            // jar/agent paths come from AppLayout, which already proved they exist.
+            var bootstrapper = new AdbBootstrapper(layout.AgentJarPath!, layout.AdbPath!);
 
             var devices = bootstrapper.ListDevices();
+
             if (devices.Count == 0)
             {
-                throw new InvalidOperationException(
-                    "No Android device visible to `adb devices`. Checklist:\n" +
-                    "  - USB debugging enabled and the 'Allow USB debugging' prompt accepted\n" +
-                    "  - an ADB-capable USB driver installed (Windows needs one; macOS does not)\n" +
-                    "  - or use Wireless Debugging (`adb pair` / `adb connect`), which needs no driver\n" +
-                    "  - or bypass ADB entirely with --connect <phone-ip>:27186");
+                throw new InvalidOperationException(NoDeviceMessage(bootstrapper.AdbPath));
+            }
+
+            if (devices.Count > 1 && options.Serial == null)
+            {
+                Console.WriteLine("[Dev ] several devices are connected:");
+                foreach (AdbDevice d in devices)
+                {
+                    Console.WriteLine($"        {d}");
+                }
+                Console.WriteLine("[Dev ] using the first authorized one; pass --device SERIAL to choose.");
             }
 
             AdbDevice device = options.Serial != null
                 ? devices.Find(d => d.Serial == options.Serial)
-                  ?? throw new InvalidOperationException($"Device '{options.Serial}' not found.")
-                : devices.Find(d => d.IsAuthorized)
                   ?? throw new InvalidOperationException(
-                      $"Device(s) present but not authorized: {string.Join(", ", devices)}");
+                      $"Device '{options.Serial}' is not in `adb devices`. Connected: {string.Join(", ", devices)}")
+                : devices.Find(d => d.IsAuthorized)
+                  ?? throw new InvalidOperationException(DescribeDeviceProblem(devices));
 
             Console.WriteLine($"[Dev ] {device}");
 
@@ -144,20 +171,192 @@ namespace Seam.WindowsHost
                     $"USB via ADB forward -> 127.0.0.1:{forwardedPort} ({device.Model})");
         }
 
-        private static string ResolveAgentJar()
+        /// <summary>Actionable text shown when `adb devices` returns nothing.</summary>
+        private static string NoDeviceMessage(string adbPath) =>
+            "No Android device is visible to adb.\n" +
+            $"  adb used: {adbPath}\n" +
+            "  1. Enable Developer options -> USB debugging on the phone.\n" +
+            "  2. Plug the cable in and accept the 'Allow USB debugging?' prompt ON THE PHONE.\n" +
+            "  3. Windows usually needs an OEM ADB USB driver; many vendors ship none.\n" +
+            "     Wireless debugging avoids the driver entirely (adb pair / adb connect), and\n" +
+            "     --connect <phone-ip>:27186 bypasses adb once the agent is running.\n" +
+            "  4. Run  seam-host.exe --diagnose  to see which adb was picked and what it reports.";
+
+        /// <summary>Turns adb device states into instructions instead of a bare list.</summary>
+        private static string DescribeDeviceProblem(List<AdbDevice> devices)
         {
-            string[] candidates =
+            var lines = new List<string> { "The phone is connected but SEAM cannot use it yet." };
+            foreach (AdbDevice d in devices)
             {
-                System.IO.Path.Combine(AppContext.BaseDirectory, "seam-agent.jar"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "Resources", "seam-agent.jar"),
-                System.IO.Path.Combine(Environment.CurrentDirectory, "dist", "seam-agent.jar"),
-                System.IO.Path.Combine(Environment.CurrentDirectory, "..", "dist", "seam-agent.jar")
-            };
-            foreach (string c in candidates)
-            {
-                if (System.IO.File.Exists(c)) return System.IO.Path.GetFullPath(c);
+                lines.Add($"  {d.Serial}  state={d.State}  model={d.Model}");
+                switch (d.State)
+                {
+                    case "unauthorized":
+                        lines.Add("    -> Unlock the phone and tap ALLOW on the 'Allow USB debugging?' dialog.");
+                        lines.Add("    -> If no dialog appears, run:  adb kill-server  then re-plug the cable.");
+                        lines.Add("    -> 'Always allow from this computer' avoids repeating this every time.");
+                        break;
+                    case "offline":
+                        lines.Add("    -> The device answered but the connection is stale: re-plug the USB cable,");
+                        lines.Add("       or run  adb kill-server  and try again.");
+                        break;
+                    case "no permissions":
+                        lines.Add("    -> Windows denied access to the USB device: install the OEM ADB driver,");
+                        lines.Add("       or use Wireless debugging (no driver needed).");
+                        break;
+                    default:
+                        lines.Add("    -> Unknown state; run  adb devices -l  and  seam-host.exe --diagnose.");
+                        break;
+                }
             }
-            return candidates[0]; // report the expected location; BootstrapSession gives a clear error
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string VersionString =>
+            typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+        /// <summary>
+        /// `--diagnose`: prints exactly where SEAM looked for its resources and what it found.
+        /// Exists because the first prototype failed on real hardware with "adb not found" and
+        /// "jar expected in %TEMP%", and there was no way for a user to see why.
+        /// </summary>
+        private static int RunDiagnose(Options options)
+        {
+            Console.WriteLine("=== SEAM Windows host - diagnostics ===");
+            Console.WriteLine($"version         : {VersionString}");
+            Console.WriteLine($"process path    : {Environment.ProcessPath ?? "(unknown)"}");
+            Console.WriteLine($"app context dir : {AppContext.BaseDirectory}");
+            Console.WriteLine($"current dir     : {Environment.CurrentDirectory}");
+            Console.WriteLine();
+
+            AppLayout layout;
+            try
+            {
+                layout = AppLayout.ResolveForRoot(
+                    AppLayout.ExecutableDirectory(), options.AdbPath, options.JarPath, requireResources: false);
+            }
+            catch (SeamResourceException ex)
+            {
+                Console.WriteLine($"[FAIL] {ex.Message}");
+                return 2;
+            }
+
+            bool ok = true;
+
+            Console.WriteLine($"app dir         : {layout.AppRoot}");
+
+            // ---- adb ----
+            Console.WriteLine();
+            Console.WriteLine("ADB");
+            if (layout.AdbPath == null)
+            {
+                ok = false;
+                Console.WriteLine("  [FAIL] adb.exe not found. Searched:");
+                foreach (string candidate in layout.AdbCandidates)
+                {
+                    Console.WriteLine($"         - {candidate}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"  path     : {layout.AdbPath}");
+                Console.WriteLine($"  source   : {(layout.AdbIsBundled ? "bundled with SEAM" : "system / PATH (not bundled)")}");
+                try
+                {
+                    var bootstrapper = new AdbBootstrapper(layout.AgentJarPath ?? "unused", layout.AdbPath);
+                    foreach (string line in bootstrapper.AdbVersion())
+                    {
+                        Console.WriteLine($"  version  : {line}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    Console.WriteLine($"  [FAIL] adb could not be executed: {ex.Message}");
+                }
+            }
+
+            string platformTools = Path.Combine(layout.AppRoot, AppLayout.PlatformToolsFolder);
+            int toolCount = Directory.Exists(platformTools)
+                ? Directory.GetFiles(platformTools).Length
+                : 0;
+            Console.WriteLine($"  platform-tools folder: {platformTools} ({(Directory.Exists(platformTools) ? toolCount + " files" : "missing")})");
+
+            // ---- agent jar ----
+            Console.WriteLine();
+            Console.WriteLine("ANDROID AGENT");
+            if (layout.AgentJarPath == null)
+            {
+                ok = false;
+                Console.WriteLine("  [FAIL] seam-agent.jar not found. Searched:");
+                foreach (string candidate in layout.JarCandidates)
+                {
+                    Console.WriteLine($"         - {candidate}");
+                }
+            }
+            else
+            {
+                var info = new FileInfo(layout.AgentJarPath);
+                Console.WriteLine($"  path     : {layout.AgentJarPath}");
+                Console.WriteLine($"  size     : {info.Length:n0} bytes");
+            }
+
+            // ---- pairing key (never printed) ----
+            Console.WriteLine();
+            Console.WriteLine("PAIRING KEY");
+            string keyPath = SeamAuthenticator.KeyStorePath;
+            if (File.Exists(keyPath))
+            {
+                try
+                {
+                    SeamAuthenticator auth = SeamAuthenticator.LoadOrCreatePersistentKey();
+                    Console.WriteLine($"  store      : {keyPath}");
+                    Console.WriteLine($"  fingerprint: {auth.KeyFingerprint}  (SHA-256 prefix; the key is never printed)");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  [WARN] could not read {keyPath}: {ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"  store      : {keyPath} (not created yet; it is generated on first run)");
+            }
+
+            // ---- devices ----
+            Console.WriteLine();
+            Console.WriteLine("DEVICES");
+            if (layout.AdbPath != null)
+            {
+                try
+                {
+                    var bootstrapper = new AdbBootstrapper(layout.AgentJarPath ?? "unused", layout.AdbPath);
+                    var devices = bootstrapper.ListDevices();
+                    if (devices.Count == 0)
+                    {
+                        Console.WriteLine("  none visible to adb (see the checklist in --help / README)");
+                    }
+                    else
+                    {
+                        foreach (AdbDevice d in devices)
+                        {
+                            Console.WriteLine($"  {d.Serial}  state={d.State}  model={d.Model}  authorized={d.IsAuthorized}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  [WARN] {ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("  skipped (no adb)");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(ok ? "RESULT: all bundled resources found." : "RESULT: a required resource is missing (see FAIL above).");
+            return ok ? 0 : 2;
         }
 
         // ---- Scripted mouse stream (phone-free / hook-free verification) -----------------
@@ -195,7 +394,7 @@ namespace Seam.WindowsHost
             }
             Thread.Sleep(200);
 
-            Console.WriteLine($"[Test ] trajectory complete — frames sent={connection.FramesSent}, " +
+            Console.WriteLine($"[Test ] trajectory complete - frames sent={connection.FramesSent}, " +
                               $"frames received={connection.FramesReceived}");
 
             connection.Send(SeamFrames.CursorLeave(1));
@@ -276,11 +475,10 @@ namespace Seam.WindowsHost
             _ => "right"
         };
 
-        private static string Mask(string hex) =>
-            hex.Length >= 8 ? $"{hex.Substring(0, 4)}…{hex.Substring(hex.Length - 4)}" : hex;
+        // (pairing keys are never logged; KeyFingerprint replaces the old partial mask)
 
         private static string Truncate(string s) =>
-            s.Length <= 48 ? s : s.Substring(0, 45) + "…";
+            s.Length <= 48 ? s : s.Substring(0, 45) + "...";
 
         // ---- CLI -------------------------------------------------------------------------
 
@@ -294,6 +492,7 @@ namespace Seam.WindowsHost
                     case "--self-test": o.SelfTest = true; break;
                     case "--trajectory": o.Trajectory = true; break;
                     case "--capture": o.ForceCapture = true; break;
+                    case "--diagnose": o.Diagnose = true; break;
                     case "-h":
                     case "--help": o.ShowHelp = true; break;
                     case "--connect": o.Connect = Next(args, ref i); break;
@@ -328,7 +527,7 @@ namespace Seam.WindowsHost
         {
             Console.WriteLine(
 @"
-SEAM Windows host (prototype) — talks to the existing, unmodified Android agent.
+SEAM Windows host - talks to the existing, unmodified Android agent.
 
 USAGE
   seam-host.exe [options]
@@ -336,7 +535,9 @@ USAGE
 MODES
   (default)        Discover a device over ADB, bootstrap seam-agent, connect,
                    then capture Windows input at the configured screen edge.
-  --self-test      Offline protocol/auth/frame conformance tests (no phone needed).
+  --self-test      Offline protocol/auth/frame/resource tests (no phone needed).
+  --diagnose       Show where SEAM looked for adb.exe, seam-agent.jar and the pairing
+                   key, what it found, and which devices adb sees.
   --trajectory     Connect and stream a scripted mouse path (no input hooks).
                    Use this to prove the wire path on real hardware.
 
@@ -345,14 +546,16 @@ OPTIONS
   --edge E         Screen edge the phone sits on: right (default), left, top, bottom.
   --capture        Route to Android on the first mouse movement (deterministic demo).
   --device SERIAL  Pick a specific adb serial.
-  --jar PATH       Path to seam-agent.jar (defaults to next to the exe or dist/).
-  --adb PATH       Path to adb.exe (defaults to PATH / Platform-Tools locations).
+  --jar PATH       Override seam-agent.jar (default: next to seam-host.exe).
+  --adb PATH       Override adb.exe (default: platform-tools\adb.exe next to seam-host.exe,
+                   then PATH and Android SDK locations).
   -h, --help       This text.
 
-WHERE THE AGENT JAR COMES FROM
-  The Android agent is unchanged. Build it once on macOS with `make build-agent`
-  (produces dist/seam-agent.jar) or extract it from the shipped SEAM.app bundle,
-  then place it next to seam-host.exe.
+BUNDLED RESOURCES
+  The installer and the portable ZIP both ship adb.exe under platform-tools\ and
+  seam-agent.jar next to seam-host.exe. SEAM resolves them from the folder that
+  contains seam-host.exe (not the current directory, not PATH, not %TEMP%), so it
+  works from a shortcut, Explorer, PowerShell or any working directory.
 
 PANIC
   Ctrl+Alt+Q returns control to Windows while routing.

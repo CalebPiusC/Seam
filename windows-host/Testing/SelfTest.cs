@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
+using Seam.WindowsHost.Bootstrap;
+using Seam.WindowsHost.Host;
 using Seam.WindowsHost.Protocol;
 using Seam.WindowsHost.Transport;
 
@@ -23,6 +26,7 @@ namespace Seam.WindowsHost.Testing
     {
         private static int _passed;
         private static int _failed;
+        private static int _skipped;
 
         // ---- Golden vectors (computed from SeamAuthenticator.java semantics) --------------
         private const string KeyHex =
@@ -39,14 +43,15 @@ namespace Seam.WindowsHost.Testing
 
         public static int Run()
         {
-            Console.WriteLine("=== SEAM Windows host — offline self-test ===");
+            Console.WriteLine("=== SEAM Windows host - offline self-test ===");
 
             TestGoldenHandshakeVector();
             TestFrameLayouts();
             TestLoopbackHandshakeAndFrames();
+            TestResourceResolution();
 
             Console.WriteLine();
-            Console.WriteLine($"=== {_passed} passed, {_failed} failed ===");
+            Console.WriteLine($"=== {_passed} passed, {_failed} failed, {_skipped} skipped ===");
             return _failed == 0 ? 0 : 1;
         }
 
@@ -195,6 +200,170 @@ namespace Seam.WindowsHost.Testing
             {
                 conn?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Resource discovery: the class of bug that broke the first real-device test
+        /// (adb not found, agent jar expected under %TEMP%). Runs without a phone.
+        /// </summary>
+        private static void TestResourceResolution()
+        {
+            Console.WriteLine("\n[4] Resource discovery (install layout)");
+
+            // -- the executable's own directory, never the current directory --
+            string exeDir = AppLayout.ExecutableDirectory();
+            Check("layout: executable directory is absolute", Path.IsPathRooted(exeDir));
+            string? processPath = Environment.ProcessPath;
+            if (processPath != null &&
+                !Path.GetFileName(processPath).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase) &&
+                !Path.GetFileName(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            {
+                Check("layout: executable directory is the directory of the running .exe",
+                    string.Equals(Path.GetFullPath(Path.GetDirectoryName(processPath)!),
+                                  Path.GetFullPath(exeDir), StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                Skip("layout: executable directory is the directory of the running .exe",
+                     "hosted by dotnet.exe (dotnet run)");
+            }
+
+            // -- resolution must not depend on the working directory --
+            string originalCwd = Directory.GetCurrentDirectory();
+            string scratch = CreateScratchDir("seam-cwd-independent");
+            try
+            {
+                AppLayout before = AppLayout.ResolveForRoot(exeDir);
+                Directory.SetCurrentDirectory(scratch);
+                AppLayout after = AppLayout.ResolveForRoot(AppLayout.ExecutableDirectory());
+                Check("layout: resolution is independent of the working directory",
+                    string.Equals(before.AppRoot, after.AppRoot, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(before.AdbPath ?? "", after.AdbPath ?? "", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(before.AgentJarPath ?? "", after.AgentJarPath ?? "", StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                Directory.SetCurrentDirectory(originalCwd);
+                TryDelete(scratch);
+            }
+
+            // -- a path containing spaces resolves exactly --
+            string spacedRoot = Path.Combine(CreateScratchDir("seam spaces"), "SEAM Windows x64 (portable)");
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(spacedRoot, "platform-tools"));
+                File.WriteAllBytes(Path.Combine(spacedRoot, "platform-tools", "adb.exe"), new byte[] { 0x4D, 0x5A });
+                File.WriteAllBytes(Path.Combine(spacedRoot, "seam-agent.jar"), new byte[] { 0x50, 0x4B });
+
+                AppLayout spaced = AppLayout.ResolveForRoot(spacedRoot, requireResources: true);
+                Check("layout: finds adb.exe in a path containing spaces",
+                    spaced.AdbPath != null &&
+                    string.Equals(spaced.AdbPath,
+                        Path.Combine(spacedRoot, "platform-tools", "adb.exe"), StringComparison.OrdinalIgnoreCase));
+                Check("layout: finds seam-agent.jar in a path containing spaces",
+                    spaced.AgentJarPath != null &&
+                    string.Equals(spaced.AgentJarPath,
+                        Path.Combine(spacedRoot, "seam-agent.jar"), StringComparison.OrdinalIgnoreCase));
+                Check("layout: bundled adb is marked as bundled (not PATH)",
+                    spaced.AdbIsBundled);
+
+                // -- missing resources produce an actionable error, not a silent fallback --
+                File.Delete(Path.Combine(spacedRoot, "seam-agent.jar"));
+                bool threw = false;
+                string message = "";
+                try
+                {
+                    AppLayout.ResolveForRoot(spacedRoot, requireResources: true);
+                }
+                catch (SeamResourceException ex)
+                {
+                    threw = true;
+                    message = ex.Message;
+                }
+                Check("layout: missing seam-agent.jar raises a clear error", threw && message.Contains("seam-agent.jar"));
+                Check("layout: the error lists where it looked", message.Contains("Searched"));
+
+                // -- an explicit override that does not exist is rejected, not ignored --
+                bool overrideThrew = false;
+                try
+                {
+                    AppLayout.ResolveForRoot(spacedRoot, adbOverride: Path.Combine(spacedRoot, "nope", "adb.exe"));
+                }
+                catch (SeamResourceException)
+                {
+                    overrideThrew = true;
+                }
+                Check("layout: a bad --adb override is rejected", overrideThrew);
+            }
+            finally
+            {
+                TryDelete(spacedRoot);
+            }
+
+            // -- the real package: adb is executable and the agent jar is present --
+            AppLayout real = AppLayout.ResolveForRoot(AppLayout.ExecutableDirectory());
+            if (real.AdbPath != null)
+            {
+                try
+                {
+                    var bootstrapper = new AdbBootstrapper(real.AgentJarPath ?? "unused", real.AdbPath);
+                    string[] version = bootstrapper.AdbVersion();
+                    Check("process: the resolved adb.exe executes", version.Length > 0 && version[0].Contains("Android Debug Bridge"));
+                }
+                catch (Exception ex)
+                {
+                    Check($"process: the resolved adb.exe executes ({ex.Message})", false);
+                }
+            }
+            else
+            {
+                Skip("process: the resolved adb.exe executes", "no adb next to this executable");
+            }
+
+            if (real.AgentJarPath != null)
+            {
+                long size = new FileInfo(real.AgentJarPath).Length;
+                Check("package: the resolved seam-agent.jar looks like a jar", size > 4096);
+            }
+            else
+            {
+                Skip("package: the resolved seam-agent.jar looks like a jar", "no seam-agent.jar next to this executable");
+            }
+
+            // -- pairing material must never reach the log --
+            string[] redacted = AdbBootstrapper.Redact(new[]
+            {
+                "-s", "R58M12345", "shell",
+                "CLASSPATH=/data/local/tmp/seam-agent.jar app_process /system/bin com.seam.agent.Main --auth-key=0123456789abcdef"
+            });
+            Check("logging: --auth-key is redacted in adb diagnostics",
+                !string.Join(" ", redacted).Contains("0123456789abcdef") &&
+                string.Join(" ", redacted).Contains("--auth-key=***"));
+        }
+
+        private static string CreateScratchDir(string name)
+        {
+            string dir = Path.Combine(Path.GetTempPath(), name.Replace(' ', '_') + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        private static void TryDelete(string dir)
+        {
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
+            catch
+            {
+                // best effort: a leftover temp folder must never fail the suite
+            }
+        }
+
+        private static void Skip(string name, string reason)
+        {
+            _skipped++;
+            Console.WriteLine($"  [SKIP] {name} -- {reason}");
         }
 
         private static void Check(string name, bool condition)

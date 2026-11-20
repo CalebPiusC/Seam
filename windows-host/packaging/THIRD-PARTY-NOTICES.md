@@ -1,7 +1,7 @@
 # Third-party notices — SEAM for Windows (x64)
 
-This file ships inside `SEAM-Windows-x64.zip` and describes exactly what is redistributed
-in that archive and what is deliberately left out.
+This file ships inside `SEAM-Windows-x64.zip` and inside `SEAM-Setup-x64.exe`. Both are built
+from the same folder, so they redistribute exactly the same set of files.
 
 ## 1. SEAM itself — MIT
 
@@ -24,31 +24,32 @@ then `d8 --min-api 30`. It is the same build `scripts/build-agent.sh` produces o
   (`scripts/build-host.sh` copies it into `SEAM.app/Contents/Resources/`).
 - `BUILD-INFO.txt` in the ZIP records the commit it was built from and its SHA-256.
 
-## 3. .NET 8 runtime — included (self-contained single-file)
+## 3. .NET 8 runtime — included (self-contained, folder-based)
 
 `seam-host.exe` is published with `-r win-x64 --self-contained true
--p:PublishSingleFile=true`, so the .NET runtime is embedded inside the executable.
-Nothing needs to be installed by the user.
+-p:PublishSingleFile=false`, so the .NET runtime ships as the `*.dll` files next to the
+executable. Nothing needs to be installed by the user and nothing is extracted to `%TEMP%`
+at start-up (a single-file build would extract there, which is what originally broke
+resource discovery).
 
 .NET is MIT-licensed and Copyright (c) .NET Foundation and Contributors.
 Its full licence text is available at <https://github.com/dotnet/runtime/blob/main/LICENSE.TXT>.
-The embedded runtime is an unmodified Microsoft/DotNet Foundation build published on NuGet
+The bundled runtime is an unmodified Microsoft/DotNet Foundation build published on NuGet
 (`Microsoft.NETCore.App.Runtime.win-x64`).
 
-## 4. Android `adb` / Platform-Tools — NOT included (by default)
+## 4. Android `adb` / Platform-Tools — included
 
 `adb.exe`, `AdbWinApi.dll` and `AdbWinUsbApi.dll` are Google/AOSP Android Platform-Tools.
+They are shipped in `platform-tools\` next to `seam-host.exe`, both in the ZIP and in the
+installer, so that SEAM works out of the box with no PATH edits and no manual download.
+They are redistributed unmodified, together with the licence notice below, under the
+Apache License 2.0 (Android SDK Platform-Tools terms:
+<https://developer.android.com/studio/terms>).
 
-- **Default build:** excluded. The ZIP ships `Get-Adb.ps1`, which downloads Google's
-  official `platform-tools-latest-windows.zip` and unpacks it next to `seam-host.exe`.
-  The download is the user's action, under Google's terms
-  (<https://developer.android.com/studio/terms>), which is why SEAM does not redistribute it.
-- **Opt-in build:** dispatching the `Windows build` workflow with `bundle_adb = true`
-  copies the runner's Platform-Tools into `platform-tools/` and appends the notice below.
-  The maintainer is responsible for confirming that this redistribution is acceptable
-  before shipping such a ZIP publicly.
+`Get-Adb.ps1` is still shipped as a repair tool: it re-downloads Google's official
+`platform-tools-latest-windows.zip` if the bundled copy is missing or corrupt.
 
-If Platform-Tools are included, this notice applies:
+This notice applies:
 
 ```
 Android SDK Platform-Tools (adb)

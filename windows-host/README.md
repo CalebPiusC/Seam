@@ -13,64 +13,86 @@ Nothing outside `windows-host/`, the packaging assets under `windows-host/packag
 You do **not** need the .NET SDK, the .NET runtime, or Visual Studio to run SEAM on Windows.
 A GitHub Actions workflow builds, tests and packages it on a Windows runner:
 
-**Actions → “Windows build” → Run workflow** (manual trigger, nothing is published on its own).
+**Actions → "Windows build" → Run workflow** (manual trigger, nothing is published on its own).
 
-When the run finishes, download the artifact:
+When the run finishes, download either artifact from that run:
 
-**Actions → the run → Artifacts → `SEAM-Windows-x64.zip`** → download → unzip.
+| Artifact | What it is |
+|---|---|
+| `SEAM-Setup-x64.exe` | Installer: Program Files, Start Menu, *Installed apps* entry, uninstaller |
+| `SEAM-Windows-x64.zip` | Portable build: unzip anywhere, run `seam-host.exe` |
 
 > The *Run workflow* button only appears once this file is on the default branch (a GitHub
 > limitation of `workflow_dispatch`). Until then, any push to an `arena/**` branch builds
-> automatically, and the artifact sits on that run.
+> automatically, and both artifacts sit on that run.
 
 What the workflow actually does, in order, and fails on the first broken step:
 
 ```text
 dotnet restore  →  dotnet build -c Release  →  seam-host.exe --self-test
    →  javac + d8 (builds seam-agent.jar from android-agent/ sources)
-   →  dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true
-   →  published seam-host.exe --self-test
-   →  zip  →  unzip it again and self-test the binary *inside the ZIP*
-   →  upload artifact
+   →  dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=false  →  build\app
+   →  add seam-agent.jar + platform-tools\ (adb) + docs to build\app    ← the ONE source of truth
+   →  --diagnose + --self-test from build\app, from C:\, and from a path with spaces
+   →  SEAM-Windows-x64.zip (flat)  →  unzip again, hash-compare, self-test the binary inside it
+   →  Get-Adb.ps1 under real Windows PowerShell 5.1 (no-op + repair runs)
+   →  SEAM-Setup-x64.exe (Inno Setup) from the same build\app
+   →  silent install  →  --diagnose/--self-test from Program Files  →  reinstall  →  uninstall
+   →  upload both artifacts
 ```
 
-Inside the ZIP (flat layout — no folder-inside-a-folder, so Windows Explorer's *Extract All*
-produces exactly one `SEAM-Windows-x64` folder):
+The ZIP and the installer are both produced from `build\app`, so they cannot drift apart.
+
+### Why the build is a folder, not a single file
+
+The first prototype published `-p:PublishSingleFile=true` with
+`IncludeNativeLibrariesForSelfExtract=true`. That build extracts the runtime to
+`%TEMP%\.net\seam-host\<id>\` and runs from there, so `AppContext.BaseDirectory` pointed at
+`%TEMP%` — which is exactly what the first real-device test reported: `adb.exe` was never
+found in the bundled `platform-tools\`, and `seam-agent.jar` was "expected in `%TEMP%`".
+
+Now the host resolves everything from the folder that contains `seam-host.exe`
+(`Environment.ProcessPath`, see `Host/AppLayout.cs`), and the build is a plain self-contained
+folder, so nothing is extracted at run time and there is no temp lifecycle to manage.
+
+### What is inside (both artifacts, identical files)
 
 ```text
-SEAM-Windows-x64/
-├── seam-host.exe              self-contained single file (no .NET needed)
-├── seam-agent.jar             Android agent, built from this repo's sources
-├── Get-Adb.ps1                one command to install Android Platform-Tools
-├── ADD-ADB-HERE.txt           why adb.exe is not in the ZIP, and why
-├── README-WINDOWS.txt         quick start
-├── THIRD-PARTY-NOTICES.md     what is bundled and under which licence
-├── BUILD-INFO.txt             commit, runner, SDK versions, SHA-256s
+SEAM-Windows-x64/                 (Explorer's "Extract All" makes exactly this one folder)
+├── seam-host.exe                 the host
+├── seam-host.dll, *.dll,         self-contained .NET 8 runtime - keep them beside the exe
+│   hostfxr.dll, coreclr.dll
+├── seam-agent.jar                Android agent, built from this repo's sources
+├── platform-tools\               Android Platform-Tools (adb.exe + 2 DLLs) - used from here
+├── Get-Adb.ps1                   optional repair tool (re-downloads Platform-Tools)
+├── README-WINDOWS.txt            quick start
+├── THIRD-PARTY-NOTICES.md        what is bundled and under which licence
+├── BUILD-INFO.txt                commit, runner, SDK versions, SHA-256s
 └── LICENSE
 ```
 
-**`adb.exe` is not bundled by default.** Android Platform-Tools are Google/AOSP binaries; adding
-them to a project ZIP is a redistribution decision for the maintainer, not something a build
-script should do silently (`windows-host/packaging/THIRD-PARTY-NOTICES.md`). The ZIP ships
-`Get-Adb.ps1`, which downloads Google's official archive into `platform-tools\` next to the
-executable — one command, no admin rights, no PATH edits — and `seam-host.exe` looks there first.
-If you would rather bundle them, run the workflow with `bundle_adb = true`.
+**`adb.exe` is bundled** in both artifacts. SEAM never requires a `PATH` entry, never copies
+anything into `%TEMP%`, and prefers its bundled Platform-Tools over any Android SDK already
+installed on the machine. See `packaging/THIRD-PARTY-NOTICES.md` for the redistribution
+notice that ships alongside them.
 
 **`seam-agent.jar` *is* bundled,** because it is compiled from this repository's own MIT-licensed
 `android-agent/` sources by the same workflow (the macOS app bundle embeds it the same way).
+
+Install, upgrade, uninstall and troubleshooting are documented step by step in
+[`INSTALL.md`](INSTALL.md); the physical-hardware checklist is
+[`MANUAL-VERIFICATION.md`](MANUAL-VERIFICATION.md).
 
 ### Current verified build
 
 | | |
 |---|---|
 | Run | [Windows build](https://github.com/CalebPiusC/Seam/actions/workflows/windows-build.yml) — every step green |
-| Shape | **flat archive**: the 8 files sit at the ZIP root, so Explorer's *Extract All* yields one `SEAM-Windows-x64` folder, not two nested ones |
-| Verified by CI | the ZIP expands to exactly the 8 expected files (a nested `SEAM-Windows-x64/` folder now fails the build), the **binary extracted from the ZIP passes `--self-test`**, and `Get-Adb.ps1` parses and runs under real **Windows PowerShell 5.1** (fresh install, already-installed no-op, and repair after `adb.exe` is deleted) |
+| Shape | **flat archive**: files sit at the ZIP root, so Explorer's *Extract All* yields one `SEAM-Windows-x64` folder, not two nested ones |
+| Enforced by CI | `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path **and from `C:\Program Files\SEAM`**; the ZIP hash-compares file-for-file against `build\app`; the binary extracted from the ZIP passes `--self-test`; the installer is silently installed, run from the install dir, reinstalled over (pairing key unchanged) and uninstalled (pairing key preserved, *Installed apps* entry removed) |
 | Sizes / hashes | recorded per build in `BUILD-INFO.txt` inside the ZIP and in the run's summary — they change with every run (embedded timestamps), so they are not pinned here |
-| Reference numbers | `seam-host.exe` ~35.1 MB self-contained single file · `seam-agent.jar` 32,148 bytes · ZIP ~28.6 MiB |
 
 ---
-
 
 ## 1. Honest status up front
 
@@ -82,9 +104,10 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | | State |
 |---|---|
 | Protocol / auth / framing design | **Verified by execution** — 33 conformance checks pass (`tools/verify_protocol.py`) against a device-side simulator transliterated from the shipped Java |
-| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), clean, 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44729623831)) |
-| `--self-test` | **Passes** — on the build output *and* on the published single-file exe, exit code 0 |
-| Packaging | **Produced** — self-contained single-file `win-x64`, `SEAM-Windows-x64.zip`, downloaded from the run's Artifacts |
+| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8) |
+| `--self-test` | **Passes** — on the build output, on the published app folder, from a path with spaces, and on the binary extracted from the ZIP |
+| Resource discovery (`adb`, agent jar) | **Executed on Windows** — `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path and from the installed `Program Files` folder |
+| Packaging | **Produced and tested** — self-contained `win-x64` folder, `SEAM-Windows-x64.zip`, and `SEAM-Setup-x64.exe`, which CI silently installs, re-runs, upgrades and uninstalls |
 | Windows low-level hooks, `ClipCursor`, DPI | **Never executed** on interactive Windows — CI runs on a headless runner with no pointer |
 | `adb` bootstrap, device discovery | **Never executed** — the runner has `adb.exe` but there is no phone attached |
 | Real Android cursor movement | **Not demonstrated** — requires the above two rows |
@@ -118,7 +141,7 @@ compiles and its offline self-test passes, and the platform half is still unexec
 - `Testing/` — in-process loopback agent + offline self-test.
 
 **Deliberately not built:** tray UI, arrangement flyout, UDP fast path, Wi-Fi discovery probe,
-clipboard monitoring, packaging. Prototype scope only.
+clipboard monitoring, screen mirroring, QR pairing. Prototype scope only.
 
 ---
 
@@ -136,10 +159,23 @@ dotnet build -c Release
 
 Output: `windows-host/bin/Release/net8.0/seam-host.exe`
 
-You also need the **unchanged** agent jar. Build it once on a Mac (`make build-agent`) or
-extract it from `SEAM.app/Contents/Resources/seam-agent.jar`, then place it next to
-`seam-host.exe` (or pass `--jar`). You also need `adb.exe` (Android Platform-Tools) either on
-`PATH`, in `platform-tools\` next to the exe, or via `--adb`.
+To run it you need the **unchanged** agent jar and an `adb.exe`. For a shipped build both are
+inside the package; for a from-source build, either run `windows-host\packaging\Get-Adb.ps1`
+in `bin\Release\net8.0\` (it installs Platform-Tools into `platform-tools\` there) and copy
+`seam-agent.jar` next to `seam-host.exe`, or pass `--adb` / `--jar`.
+
+Resolution is app-relative and printed on demand (`Host/AppLayout.cs`):
+
+```
+seam-host.exe --diagnose
+```
+
+```
+adb   : <app dir>\platform-tools\adb.exe   (then <app dir>\adb.exe, then PATH / Android SDK)
+agent : <app dir>\seam-agent.jar           (then <app dir>\Resources\seam-agent.jar)
+```
+
+The current directory is never consulted; a bundled copy always wins over `PATH`.
 
 ---
 
@@ -149,8 +185,12 @@ extract it from `SEAM.app/Contents/Resources/seam-agent.jar`, then place it next
 ```bat
 seam-host.exe --self-test
 ```
-Checks the golden handshake vectors, every frame layout, and a full TCP handshake against the
-in-process loopback agent. Expected: `N passed, 0 failed`, exit code 0.
+Checks the golden handshake vectors, every frame layout, a full TCP handshake against the
+in-process loopback agent, and resource discovery (executable directory, working-directory
+independence, a path containing spaces, missing-resource errors, `--adb` override rejection,
+`--auth-key` redaction, and - when `platform-tools\adb.exe` is present - actually launching adb).
+Expected: `N passed, 0 failed, M skipped`, exit code 0. A `SKIP` means the check needs a file the
+current folder does not have; it is never counted as a pass.
 
 ### 4b. Real phone, no input hooks — prove the wire path
 ```bat
@@ -283,7 +323,7 @@ signed 42-byte datagrams, discovery probe + mDNS pairing, tray flyout, packaging
 
 ```
 windows-host/
-├── Program.cs                     CLI: default / --self-test / --trajectory / --connect
+├── Program.cs                     CLI: default / --self-test / --diagnose / --trajectory / --connect
 ├── Protocol/SeamWireProtocol.cs   constants, coordinates, DISPLAY_INFO/EDGE_RETURN parsing
 ├── Protocol/SeamAuthenticator.cs  3-message mutual HMAC-SHA256 (client side)
 ├── Protocol/SeamFrames.cs         outbound frame serializers

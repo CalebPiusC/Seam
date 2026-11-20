@@ -42,46 +42,31 @@ namespace Seam.WindowsHost.Bootstrap
         private readonly string _adbPath;
         private readonly string _localJarPath;
 
-        public AdbBootstrapper(string localJarPath, string? adbPath = null)
+        /// <summary>
+        /// Both paths must be absolute and already discovered by <see cref="Host.AppLayout"/>.
+        /// There is deliberately no fallback here: guessing a bare file name is what made the
+        /// prototype pick up a PATH adb.exe (or none at all) instead of the bundled one.
+        /// </summary>
+        public AdbBootstrapper(string localJarPath, string adbPath)
         {
+            if (string.IsNullOrWhiteSpace(adbPath) || !System.IO.Path.IsPathRooted(adbPath))
+            {
+                throw new ArgumentException($"adb path must be absolute, got '{adbPath}'", nameof(adbPath));
+            }
+            if (string.IsNullOrWhiteSpace(localJarPath))
+            {
+                throw new ArgumentException("agent jar path is required", nameof(localJarPath));
+            }
+            if (!File.Exists(adbPath))
+            {
+                throw new FileNotFoundException($"adb.exe not found at {adbPath}", adbPath);
+            }
+
             _localJarPath = localJarPath;
-            _adbPath = adbPath ?? ResolveAdbPath();
+            _adbPath = adbPath;
         }
 
         public string AdbPath => _adbPath;
-
-        /// <summary>
-        /// adb.exe discovery. The macOS port hard-codes /opt/homebrew/bin/adb then falls back to
-        /// PATH; on Windows we accept an explicit override, then PATH, then the usual
-        /// Platform-Tools install locations.
-        /// </summary>
-        public static string ResolveAdbPath()
-        {
-            string[] candidates =
-            {
-                Path.Combine(AppContext.BaseDirectory, "platform-tools", "adb.exe"),
-                Path.Combine(AppContext.BaseDirectory, "adb.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                             "Android", "Sdk", "platform-tools", "adb.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                             "Android", "android-sdk", "platform-tools", "adb.exe"),
-                "adb.exe",
-                "adb"
-            };
-
-            foreach (string candidate in candidates)
-            {
-                if (candidate.Contains(Path.DirectorySeparatorChar) || candidate.Contains('/'))
-                {
-                    if (File.Exists(candidate)) return candidate;
-                }
-                else
-                {
-                    return candidate; // let PATH resolution decide
-                }
-            }
-            return "adb.exe";
-        }
 
         /// <summary>`adb devices -l` — same parsing rules as UsbBootstrapper.listDevices().</summary>
         public List<AdbDevice> ListDevices()
@@ -263,7 +248,7 @@ namespace Seam.WindowsHost.Bootstrap
             if (exitCode != 0)
             {
                 throw new InvalidOperationException(
-                    $"'{_adbPath} {string.Join(" ", args)}' exited with {exitCode}: {stderr.Trim()}");
+                    $"'{_adbPath} {string.Join(" ", Redact(args))}' exited with {exitCode}: {stderr.Trim()}");
             }
             return stdout;
         }
@@ -281,11 +266,43 @@ namespace Seam.WindowsHost.Bootstrap
             }
         }
 
+        /// <summary>Lines printed by `adb version` (diagnostics only).</summary>
+        public string[] AdbVersion()
+        {
+            var (exitCode, stdout, stderr) = Execute(new[] { "version" });
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"adb version failed ({exitCode}): {stderr.Trim()}");
+            }
+            return stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        /// <summary>
+        /// Hides pairing material from diagnostics. The agent is launched with
+        /// --auth-key=&lt;64 hex chars&gt;, so any adb failure would otherwise copy the private
+        /// key into the console and into logs.
+        /// </summary>
+        internal static string[] Redact(string[] args)
+        {
+            string[] copy = new string[args.Length];
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i];
+                int idx = a.IndexOf("--auth-key=", StringComparison.OrdinalIgnoreCase);
+                copy[i] = idx >= 0 ? a.Substring(0, idx) + "--auth-key=***" : a;
+            }
+            return copy;
+        }
+
         private (int exitCode, string stdout, string stderr) Execute(string[] args)
         {
             var psi = new ProcessStartInfo
             {
+                // Absolute executable path (never a bare name) and an explicit working directory:
+                // a shortcut launched from C:\Windows, a UNC path or a read-only folder must not
+                // change behaviour, and adb.exe finds AdbWinApi.dll next to itself.
                 FileName = _adbPath,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(_adbPath) ?? Environment.CurrentDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

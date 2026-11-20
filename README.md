@@ -69,9 +69,9 @@ Nothing is installed on Android — no APK, no root.
 
 ### Windows x64
 
-**Portable ZIP. Nothing to install on Windows:** the package is a self-contained .NET 8 `win-x64`
-single-file build, so it needs **no .NET SDK, no .NET runtime and no Visual Studio** — just unzip and
-run.
+**Installer or portable ZIP. Nothing else to install:** both packages contain a self-contained .NET 8
+`win-x64` build *and* Android Platform-Tools (`adb.exe`), so they need **no .NET SDK, no .NET runtime,
+no Android SDK, no PATH edits and no manual downloads** — run the installer, or unzip and run.
 
 > **Windows support is experimental.** The host compiles and passes its offline self-test in CI, but
 > it has **not yet been exercised on a physical Windows desktop or against a physical phone**. Expect
@@ -90,17 +90,17 @@ built by CI and attached to the run as an artifact:
 
 1. Unzip `SEAM-Windows-x64.zip`. Keep the `SEAM-Windows-x64` folder intact — the executable expects
    `seam-agent.jar` and `platform-tools\` beside it.
-2. Open **PowerShell** in that folder, then install adb once:
+2. Confirm the host can see everything it needs (no phone required):
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Get-Adb.ps1
+   .\seam-host.exe --diagnose   # app folder, adb, agent jar, devices - nothing is printed that is secret
    ```
 
-   This runs on the **Windows PowerShell 5.1** that ships with Windows 11 (PowerShell 7 is not
-   required) and downloads Google's official Android Platform-Tools into `platform-tools\`. `adb.exe` is
-   deliberately **not** bundled in the ZIP (it is a Google/AOSP binary — see the
-   `THIRD-PARTY-NOTICES.md` inside the package); `seam-host.exe` looks in `platform-tools\` first,
-   so no PATH changes are needed.
+   `adb.exe` is bundled in `platform-tools\` and `seam-agent.jar` sits next to `seam-host.exe`, so
+   this should end with `RESULT: all bundled resources found.` and exit code 0. SEAM resolves both
+   from the folder containing `seam-host.exe` — never from the current directory, `PATH` or `%TEMP%`
+   — so launching from a shortcut or another drive is fine. `Get-Adb.ps1` remains in the package as
+   an optional **repair** tool if `platform-tools\` is missing or corrupt.
 3. Confirm the host itself is healthy (no phone required):
 
    ```powershell
@@ -138,15 +138,23 @@ directly inside, with no second folder of the same name to click through:
 
 ```text
 SEAM-Windows-x64/
-├── seam-host.exe            self-contained single file (no .NET needed)
+├── seam-host.exe            the host
+├── *.dll, hostfxr.dll,      self-contained .NET 8 runtime (keep them with the exe)
+│   coreclr.dll
 ├── seam-agent.jar           the shared Android agent, compiled from this repo
-├── Get-Adb.ps1              one-command Platform-Tools installer
+├── platform-tools\           Android Platform-Tools: adb.exe + 2 DLLs, used from here
+├── Get-Adb.ps1              optional repair tool (re-downloads Platform-Tools)
 ├── README-WINDOWS.txt       quick start, printed for offline reading
-├── ADD-ADB-HERE.txt         the adb requirement, in plain language
 ├── THIRD-PARTY-NOTICES.md   what is bundled and under which licence
 ├── BUILD-INFO.txt           commit, runner, SDK versions, SHA-256s
 └── LICENSE                  MIT
 ```
+
+The **installer** (`SEAM-Setup-x64.exe`) ships the same files to `C:\Program Files\SEAM`, adds
+Start Menu shortcuts (including a *SEAM diagnostics* one), registers SEAM in **Installed apps**, and
+comes with an uninstaller that keeps your pairing key unless you explicitly say otherwise. Upgrade
+and uninstall behaviour, plus a troubleshooting table, are in
+[`windows-host/INSTALL.md`](windows-host/INSTALL.md).
 
 ---
 
@@ -203,10 +211,13 @@ setup on the phone is enabling **USB debugging** (or Wireless debugging) once. S
 4. Look for the **laptop & iPhone** icon in your macOS menu bar.
 
 ### 2. Windows Setup (Experimental)
-1. Download `SEAM-Windows-x64.zip` — see **[Windows x64](#windows-x64)** for the artifact link — and unzip it. No .NET SDK, runtime or Visual Studio is needed.
-2. In PowerShell inside the unzipped folder, install adb once: `powershell -ExecutionPolicy Bypass -File .\Get-Adb.ps1`
+1. Download **either** `SEAM-Setup-x64.exe` (installer: Start Menu entry, *Installed apps* registration, uninstaller) **or** `SEAM-Windows-x64.zip` (portable: unzip anywhere) — see **[Windows x64](#windows-x64)** for the artifact links. No .NET SDK, runtime, Android SDK or Visual Studio is needed, and nothing has to be added to `PATH`.
+2. Run `seam-host.exe --diagnose` in the install folder (or from the *SEAM diagnostics* Start Menu entry). It should end with `RESULT: all bundled resources found.` — `adb.exe` ships inside `platform-tools\` and `seam-agent.jar` next to the exe.
 3. Enable **USB debugging** on the phone and accept the *Allow USB debugging?* prompt when you plug it in (Wireless debugging also works, and needs no OEM USB driver).
-4. Run `.\seam-host.exe --self-test`, then `.\seam-host.exe --trajectory` to prove the link, then `.\seam-host.exe --capture` for real control. **`Ctrl + Alt + Q`** returns control to Windows.
+4. Run `seam-host.exe --self-test`, then `seam-host.exe --trajectory` to prove the link, then `seam-host.exe --capture` for real control. **`Ctrl + Alt + Q`** returns control to Windows.
+
+Install, upgrade, uninstall and troubleshooting: [`windows-host/INSTALL.md`](windows-host/INSTALL.md).
+Physical-hardware checklist: [`windows-host/MANUAL-VERIFICATION.md`](windows-host/MANUAL-VERIFICATION.md).
 
 The OEM-driver caveat, the exact package contents and the current limitations are all in
 **[Windows x64](#windows-x64)**.
@@ -234,7 +245,7 @@ The same `seam-agent.jar` is used by the Windows host; neither desktop needs an 
 | <img src="https://img.shields.io/badge/-Swift_6-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6"> | **Swift 6** | Native macOS host daemon, wire protocol serializer, hotkey & shortcut translator |
 | <img src="https://img.shields.io/badge/-SwiftUI_%26_Liquid_Glass-007AFF?style=flat-square&logo=apple&logoColor=white" alt="SwiftUI & Liquid Glass"> | **SwiftUI & Apple Liquid Glass** | Menu-bar popover (`GlassEffectContainer`, `.glassEffect`, `.buttonStyle(.glass)` on macOS 26+ with vibrancy fallback) and interactive `ArrangementView` |
 | <img src="https://img.shields.io/badge/-AppKit_%26_Quartz-555555?style=flat-square&logo=apple&logoColor=white" alt="AppKit & Quartz"> | **AppKit & Quartz Event Services** | `NSStatusBar`, `CGEventTap`, `CGAssociateMouseAndMouseCursorPosition`, and non-activating `CaptureShieldPanel` (`NSPanel`) |
-| <img src="https://img.shields.io/badge/-C%23_%26_.NET_8-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt="C# & .NET 8"> | **C# & .NET 8 (P/Invoke)** | Windows host: `WH_MOUSE_LL` / `WH_KEYBOARD_LL` hooks, `SetCursorPos` re-centring with a `ClipCursor` guard, per-monitor-v2 DPI, published as a self-contained single-file `win-x64` executable |
+| <img src="https://img.shields.io/badge/-C%23_%26_.NET_8-512BD4?style=flat-square&logo=dotnet&logoColor=white" alt="C# & .NET 8"> | **C# & .NET 8 (P/Invoke)** | Windows host: `WH_MOUSE_LL` / `WH_KEYBOARD_LL` hooks, `SetCursorPos` re-centring with a `ClipCursor` guard, per-monitor-v2 DPI, published as a self-contained `win-x64` folder (`adb` + agent bundled) |
 | <img src="https://img.shields.io/badge/-Apple_Icon_Composer-1C1C1E?style=flat-square&logo=apple&logoColor=white" alt="Icon Composer"> | **Apple Icon Composer** | Multi-layer Liquid Glass app icon (`AppIcon.icon`) compiled with `ictool` and `actool` into `AppIcon.icns` & `Assets.car` |
 | <img src="https://img.shields.io/badge/-Java_17_%26_d8-ED8B00?style=flat-square&logo=openjdk&logoColor=white" alt="Java 17 & d8"> | **Java 17 + Android SDK `d8`** | Zero-Gradle `32 KB` DEX daemon (`dist/seam-agent.jar`) launched via `app_process` (`uid=2000`) |
 | <img src="https://img.shields.io/badge/-Linux_%2Fdev%2Fuhid-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux /dev/uhid"> | **Linux Kernel `/dev/uhid`** | Registers a 16-bit relative HID Mouse and 6KRO HID Keyboard (`UHID_CREATE2` / `UHID_INPUT2`) directly with `InputReader` |
@@ -375,16 +386,18 @@ SEAM/
 │       ├── transport/                # DualTransportCoordinator, UsbLocalSocketServer, WifiTransportServer
 │       ├── uhid/                     # UhidDevice, HidDescriptors, HidKeycodes
 │       └── telemetry/                # DisplayTelemetry, DisplayMetricsSnapshot, NetworkTelemetry
-├── windows-host/                     # Windows desktop host (.NET 8, self-contained single file)
-│   ├── Program.cs                    # CLI: --self-test, --trajectory, --capture, --edge, --connect
+├── windows-host/                     # Windows desktop host (.NET 8, self-contained folder build)
+│   ├── Program.cs                    # CLI: --self-test, --diagnose, --trajectory, --capture, --edge, --connect
+│   ├── Host/AppLayout.cs             # app-relative discovery of adb.exe + seam-agent.jar
 │   ├── Protocol/                     # SEAM-Wire v1 frames + HMAC-SHA256 authenticator
 │   ├── Transport/                    # TCP session, frame reader, 500 ms heartbeat
 │   ├── Input/                        # Low-level mouse/keyboard hooks, edge crossing, HID key table
 │   ├── Bootstrap/                    # adb discovery, push/launch, tcp:0 → localabstract forward
 │   ├── Testing/                      # In-process loopback agent + offline self-test
-│   └── packaging/                    # ZIP payload: quick start, Get-Adb.ps1, third-party notices
+│   ├── packaging/                    # shipped docs, repair helper, icon, third-party notices
+│   └── installer/                    # Inno Setup script → SEAM-Setup-x64.exe
 ├── .github/workflows/
-│   └── windows-build.yml             # compile → self-test → publish → SEAM-Windows-x64.zip artifact
+│   └── windows-build.yml             # compile → self-test → publish → ZIP + installer → install/uninstall test
 ├── tools/                            # Protocol parity, OpenSSL vector check, Python device simulator
 └── research/                         # Architecture specifications & protocol notes
 ```
@@ -415,17 +428,20 @@ The Android agent JAR additionally needs **JDK 17+** and the Android SDK (`platf
 ```powershell
 cd windows-host
 dotnet build -c Release
-dotnet run -- --self-test          # offline protocol/auth/frame tests, no phone needed
+dotnet run -- --self-test          # offline protocol/auth/frame/resource tests, no phone needed
+dotnet run -- --diagnose           # what it resolved for adb, agent jar and pairing key
 
-# the same self-contained package CI produces:
+# the same self-contained app folder CI ships (NOT single-file: see windows-host/README.md)
 dotnet publish -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o ..\build\publish
+  -p:PublishSingleFile=false -o ..\build\app
 ```
 
-CI (`.github/workflows/windows-build.yml`, `windows-latest`) does exactly this sequence, builds
-`seam-agent.jar` with `javac`/`d8`, verifies the packaged ZIP by unpacking it and re-running the
-self-test from the extracted copy, then uploads `SEAM-Windows-x64.zip` as an artifact.
+CI (`.github/workflows/windows-build.yml`, `windows-latest`) builds `seam-agent.jar` with
+`javac`/`d8`, adds it plus `platform-tools\` and the docs to `build\app`, runs `--diagnose` and
+`--self-test` from that folder, from `C:\` and from a path with spaces, builds
+`SEAM-Windows-x64.zip` (hash-compared against `build\app`) and `SEAM-Setup-x64.exe` from the same
+folder, then **silently installs the app, runs it from `Program Files`, reinstalls over it and
+uninstalls it** before uploading both artifacts.
 
 ### Diagnostic & Transport Verification Targets
 ```bash

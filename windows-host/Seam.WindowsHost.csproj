@@ -6,7 +6,12 @@
       - Zero NuGet package references (nothing to restore beyond the SDK).
       - No WinForms/WPF/WindowsDesktop SDK dependency.
       - The project *compiles on any OS*; it only *runs* on Windows.
-    This matches the parent project's "no unnecessary dependencies" rule.
+
+    Shipping configuration (see .github/workflows/windows-build.yml):
+      dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false
+    Folder-based, not single-file, on purpose: a self-extracting single-file build runs the
+    process out of %TEMP%\.net\... and that is what made the prototype look for adb.exe and
+    seam-agent.jar in the wrong place. See windows-host/Host/AppLayout.cs.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -18,6 +23,26 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+
+    <!-- Product identity: shows up in Task Manager and in Windows "Installed apps". -->
+    <Product>SEAM</Product>
+    <AssemblyTitle>SEAM Windows host</AssemblyTitle>
+    <Description>SEAM Windows host - shares one mouse and keyboard with an Android phone over SEAM-Wire v1.</Description>
+    <Company>SEAM</Company>
+    <Copyright>MIT (c) 2026 Feranmi Oresajo</Copyright>
+    <Version>0.9.0</Version>
+    <FileVersion>0.9.0.0</FileVersion>
+
+    <!-- Only English resources are shipped; keeps the self-contained folder small. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!--
+      The Win32 icon is embedded only when building on Windows (the release path). Building
+      on macOS/Linux - the repo's other supported dev platforms - must not gain a dependency
+      on Windows-specific resource tooling.
+    -->
+    <ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">packaging\seam.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
