@@ -84,6 +84,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # A malformed .csproj makes restore fail with an unrelated-looking error. XML comments
+          # cannot contain "--", which is an easy way to break this file; check it explicitly.
+          try { [void][xml](Get-Content $env:PROJECT -Raw) }
+          catch { throw "$env:PROJECT is not well-formed XML: $($_.Exception.Message)" }
           dotnet restore $env:PROJECT
           if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
 

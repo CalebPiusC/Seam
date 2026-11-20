@@ -7,11 +7,14 @@
       - No WinForms/WPF/WindowsDesktop SDK dependency.
       - The project *compiles on any OS*; it only *runs* on Windows.
 
-    Shipping configuration (see .github/workflows/windows-build.yml):
-      dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false
+    Shipping configuration lives in .github/workflows/windows-build.yml:
+      self-contained win-x64 publish, PublishSingleFile=false.
     Folder-based, not single-file, on purpose: a self-extracting single-file build runs the
     process out of %TEMP%\.net\... and that is what made the prototype look for adb.exe and
     seam-agent.jar in the wrong place. See windows-host/Host/AppLayout.cs.
+
+    Note: this comment cannot use double hyphens (XML comments forbid them), which is why
+    the publish switches are described in prose rather than pasted as command-line flags.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
