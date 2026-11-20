@@ -87,10 +87,11 @@ Install, upgrade, uninstall and troubleshooting are documented step by step in
 
 | | |
 |---|---|
-| Run | [Windows build](https://github.com/CalebPiusC/Seam/actions/workflows/windows-build.yml) — every step green |
+| Run | [run 44743185736](https://github.com/CalebPiusC/Seam/actions/runs/44743185736) (commit `1dea2d7`, `pull_request` and `push` both green, 3 min 4 s) |
 | Shape | **flat archive**: files sit at the ZIP root, so Explorer's *Extract All* yields one `SEAM-Windows-x64` folder, not two nested ones |
 | Enforced by CI | `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path **and from `C:\Program Files\SEAM`**; the ZIP hash-compares file-for-file against `build\app`; the binary extracted from the ZIP passes `--self-test`; the installer is silently installed, run from the install dir, reinstalled over (pairing key unchanged) and uninstalled (pairing key preserved, *Installed apps* entry removed) |
-| Sizes / hashes | recorded per build in `BUILD-INFO.txt` inside the ZIP and in the run's summary — they change with every run (embedded timestamps), so they are not pinned here |
+| Artifacts from that run | `SEAM-Windows-x64.zip` 38,922,186 B `sha256:c139978c0253a8616b6bdc2ac29b8ac0dcc5a45a9f26982262698424b925981e` · `SEAM-Setup-x64.exe` 28,570,902 B `sha256:6dd4ec4608ba10f98cd37b6a7b8b2f44c00a3ed99520172e93afef281a7a697c` (they change with every build — these are quoted with the run id) |
+| Installed-apps entry seen by CI | `SEAM 0.9.0` / `0.9.0` / `C:\Program Files\Seam Verification (x64)` |
 
 ---
 
@@ -104,7 +105,7 @@ it is not a simulation, and it is also not a substitute for running the thing on
 | | State |
 |---|---|
 | Protocol / auth / framing design | **Verified by execution** — 33 conformance checks pass (`tools/verify_protocol.py`) against a device-side simulator transliterated from the shipped Java |
-| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8) |
+| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44743185736)) |
 | `--self-test` | **Passes** — on the build output, on the published app folder, from a path with spaces, and on the binary extracted from the ZIP |
 | Resource discovery (`adb`, agent jar) | **Executed on Windows** — `--diagnose` reports `source : bundled with SEAM` from the app folder, from `C:\`, from a spaced path and from the installed `Program Files` folder |
 | Packaging | **Produced and tested** — self-contained `win-x64` folder, `SEAM-Windows-x64.zip`, and `SEAM-Setup-x64.exe`, which CI silently installs, re-runs, upgrades and uninstalls |

@@ -78,18 +78,21 @@ no Android SDK, no PATH edits and no manual downloads** — run the installer, o
 > rough edges on the first runs and read [`windows-host/README.md`](windows-host/README.md) for the
 > precise list of what is and is not verified.
 
-**Where to download it.** There is intentionally **no Windows GitHub Release yet** — the ZIP is
-built by CI and attached to the run as an artifact:
+**Where to download it.** There is intentionally **no Windows GitHub Release yet** — both packages
+are built by CI and attached to the run as artifacts:
 
 1. Open **[Actions → Windows build](https://github.com/CalebPiusC/Seam/actions/workflows/windows-build.yml)**.
-2. Select the newest **green** run and download **`SEAM-Windows-x64.zip`** from its *Artifacts* section.
+2. Select the newest **green** run and download **`SEAM-Setup-x64.exe`** (installer) and/or
+   **`SEAM-Windows-x64.zip`** (portable) from its *Artifacts* section.
 3. Prefer to build it yourself? The **Run workflow** button on that page builds it on demand; the
    same workflow also runs automatically on pull requests and on `arena/**` development branches.
 
 **Extract and launch**
 
-1. Unzip `SEAM-Windows-x64.zip`. Keep the `SEAM-Windows-x64` folder intact — the executable expects
-   `seam-agent.jar` and `platform-tools\` beside it.
+1. Portable: unzip `SEAM-Windows-x64.zip`. Keep the `SEAM-Windows-x64` folder intact — the
+   executable expects `seam-agent.jar` and `platform-tools\` beside it, and its runtime DLLs.
+   Installer: run `SEAM-Setup-x64.exe` (SmartScreen → *More info → Run anyway*, the build is not
+   code-signed) and launch **SEAM** from the Start Menu.
 2. Confirm the host can see everything it needs (no phone required):
 
    ```powershell
