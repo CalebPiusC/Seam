@@ -3,8 +3,11 @@
 The CI workflow proves everything that can be proven without a phone: it compiles, runs the
 offline self-test, publishes the app folder, resolves resources from a path with spaces,
 builds the ZIP and the installer, **silently installs the app, runs it from the install
-folder, reinstalls over it, and uninstalls it again**. It cannot prove anything about a
-physical phone, a USB driver, or real mouse/keyboard capture.
+folder, reinstalls over it, and uninstalls it again**. It also **launches the application with
+no arguments on a real interactive desktop, waits for the main window, proves the WinForms
+message loop is running, sends `WM_CLOSE`, and asserts a clean exit with no leftover
+process**. It cannot prove anything about a physical phone, a USB driver, real
+mouse/keyboard capture, or how the window looks and behaves for a human.
 
 Run this list on the machine you reported problems from. Every step states the exact command
 and the result that counts as a pass. Nothing below has been executed by the agent — this is
@@ -34,21 +37,139 @@ Pass: ends with `RESULT: all bundled resources found.` and exit code 0
 
 Pass:
 - Start Menu contains `SEAM`, `SEAM diagnostics`, `SEAM quick start`, `Uninstall SEAM`.
-- **Settings → Apps → Installed apps** lists `SEAM 0.9.0` with an uninstall entry.
+- **Settings → Apps → Installed apps** lists `SEAM 0.10.0` with an uninstall entry.
 - `C:\Program Files\SEAM\platform-tools\adb.exe` and `C:\Program Files\SEAM\seam-agent.jar`
   exist.
 
-## 2. Shortcut launch resolves resources
+## 2. Desktop application (GUI) — launch, interaction, resize, close
 
-Launch **SEAM** from the Start Menu, then from the desktop shortcut, then:
+This is the section CI can only half-cover: it proves the window is created and the message
+loop runs, not how the application behaves for a person. Do this **before** connecting a
+phone, so that any failure is unambiguous.
+
+### 2.1 Normal launch, every route a user has
+
+With no phone attached, launch SEAM four ways and confirm each one **opens the window**:
+
+1. **Start Menu → SEAM.**
+2. **Desktop shortcut → SEAM** (only exists if you ticked the box during setup).
+3. **File Explorer → `C:\Program Files\SEAM\seam-host.exe`** (double-click).
+4. **Portable:** extract `SEAM-Windows-x64.zip` to `C:\Users\<you>\Desktop\SEAM test (v2)`
+   and double-click `seam-host.exe` in that folder.
+
+Pass, for all four:
+
+- The window appears within ~3 seconds: title `SEAM`, SEAM icon in the title bar and on the
+  taskbar (not a generic white icon), status pill showing **Disconnected**.
+- **No console window flashes** and no black window is left behind.
+- **No UAC prompt** for the application itself (the installer is different: it elevates).
+- No crash dialog and no error banner just because there is no phone.
+- Task Manager → Details shows exactly one `seam-host.exe`. No `conhost.exe` is attached to it.
+
+Then confirm resource resolution from the same session, from an unrelated directory:
 
 ```
 cd C:\
 & "C:\Program Files\SEAM\seam-host.exe" --diagnose
 ```
 
-Pass: all three report `app dir : C:\Program Files\SEAM`, `source : bundled with SEAM`, and
-`RESULT: all bundled resources found.` — no `%TEMP%` path anywhere, and no PATH dependency.
+Pass: `app dir` is the install folder (or the portable folder), `source   : bundled with SEAM`,
+`RESULT: all bundled resources found.`, exit code 0, and no `%TEMP%` path anywhere.
+
+### 2.2 The window is live, not a static picture
+
+1. Leave the window open for 30 s with no phone.
+2. Watch the activity log: it should show the ADB/device polling lines rather than freezing.
+3. Move the window, minimise and restore it, and click in it.
+
+Pass: the window repaints, the controls stay enabled/disabled consistently, and the process
+stays responsive (Windows does not report "Not Responding", no spinning cursor on hover).
+
+### 2.3 Interaction — every control
+
+Do each of these and note anything that does nothing, throws, or looks broken:
+
+- **Settings:** open it, change the edge (right → left), toggle *auto-connect*, change the
+  activity length, **Save**, close the window, reopen SEAM. Pass: the values are still there
+  (`%APPDATA%\SEAM\ui-settings.json`), and the hint text in the window names the new edge.
+- **Diagnostics:** open it. Pass: a report within a few seconds, ending with
+  `RESULT: all bundled resources found.`, containing a short `fingerprint:` and **no long key**.
+- **Copy log:** click it, paste into Notepad. Pass: the visible log text is on the clipboard.
+- **Clear log:** click it. Pass: the log empties and the placeholder text returns.
+- **Refresh:** click it. Pass: it does not error with no phone attached.
+- **Connect / Disconnect / Enable input sharing:** with no phone these must be disabled or
+  explain why, never crash. (Their real behaviour is tested in §2.6.)
+- **Banner:** if an error banner appears, **Dismiss** removes it and the layout closes up.
+
+### 2.4 Resize and display scaling
+
+1. Drag the window as small as it goes, then maximise, then restore.
+2. Repeat at Windows display scaling **100 %**, **125 %** and **150 %**
+   (Settings → System → Display → Scale; sign out and back in if Windows asks).
+3. On a laptop, also try with an external monitor if one is available.
+
+Pass at every scale: no clipped labels, no overlapping buttons, the status card and the log
+keep their proportions, the window never grows beyond the usable screen area, and the
+minimum size still shows every control.
+
+### 2.5 Close cleanly, nothing left behind
+
+1. Close the window with the **X** while disconnected.
+2. Close it again while **connected** (repeat after §2.6).
+3. After closing, check Task Manager → Details.
+
+Pass:
+
+- `seam-host.exe` disappears within a couple of seconds; no error dialog on exit.
+- Your mouse and keyboard behave exactly as before (the low-level hooks are removed).
+- `%APPDATA%\SEAM\ui-settings.json` was just updated (the close path saves your settings).
+- `adb.exe` may still be running: that is the ADB server daemon, which is normal and shared
+  with any other Android tooling. **`seam-host.exe` must not be.**
+- Relaunching immediately works, with or without that `adb.exe` still running.
+
+### 2.6 USB session through the window
+
+1. Phone connected by USB with **USB debugging** on but **not yet authorised**.
+2. Launch SEAM.
+
+Pass: the phone is listed as **unauthorized** and the window says to accept the prompt on the
+phone (no console needed). Accept it on the phone → within a few seconds the device becomes
+authorised.
+
+3. Press **Connect**.
+
+Pass: the status pill turns green, the log shows the agent push/start, `mutual HMAC-SHA256 OK`
+and `DISPLAY_INFO`; no console window appears at any point.
+
+4. Move the pointer to the named screen edge → the phone takes the pointer; type on the PC
+   keyboard → characters land on the phone; **Ctrl + Alt + Q** returns control to Windows.
+5. Copy text on either side and paste on the other (clipboard both directions).
+6. Press **Disconnect**, then unplug and re-plug the cable.
+
+Pass: control returns to Windows, the app notices the unplug/replug (Connect becomes
+Reconnect) and can connect again **without** restarting SEAM.
+
+### 2.7 Wireless debugging through the window
+
+1. Phone: Developer options → **Wireless debugging** → *Pair device with pairing code*.
+2. On the PC, pair once with the bundled ADB (this is the only step that needs a terminal):
+
+```
+"C:\Program Files\SEAM\platform-tools\adb.exe" pair <phone-ip>:<pairing-port>
+"C:\Program Files\SEAM\platform-tools\adb.exe" connect <phone-ip>:<debug-port>
+```
+
+3. In the SEAM window press **Refresh**, then **Connect**.
+
+Pass: the phone appears without a USB cable, the session behaves exactly as in §2.6 steps 3–6,
+and nothing requires an OEM USB driver.
+
+### 2.8 If something does not work
+
+Record: which of 2.1–2.7 failed, the exact window message, and the output of
+`seam-host.exe --diagnose` (it contains no key material). Screenshots of the window at the
+problem moment are the most useful evidence, because everything above is about what a person
+sees rather than what a log says.
 
 ## 3. Phone authorisation flow
 

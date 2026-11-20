@@ -7,7 +7,8 @@ This build needs no .NET installation, no PATH edits and nothing copied to %TEMP
 IF YOU USED SEAM-Setup-x64.exe
 ------------------------------
 SEAM is installed in C:\Program Files\SEAM. Start it from the Start Menu ("SEAM") or
-from the desktop shortcut if you asked for one: the SEAM window opens.
+from the desktop shortcut if you asked for one: the SEAM window opens. There is no
+command to type and no console window.
 
   - "SEAM"                the application
   - "SEAM diagnostics"    the troubleshooting report, in a console window
@@ -21,7 +22,20 @@ IF YOU USED THE PORTABLE ZIP
 The ZIP is flat: Explorer's "Extract All" creates one SEAM-Windows-x64 folder with these
 files directly inside it. Keep the folder together - seam-host.exe needs the same
 folder's platform-tools\ and seam-agent.jar. You can move the folder anywhere (including
-a path with spaces), then double-click seam-host.exe.
+a path with spaces), then double-click seam-host.exe: the SEAM window opens.
+
+WHEN WINDOWS WARNS ABOUT THE APPLICATION (ONCE)
+-----------------------------------------------
+The SEAM builds are not code-signed. The first time you run SEAM-Setup-x64.exe, or the
+first time you run a seam-host.exe that came out of a downloaded ZIP, Windows may show
+"Windows protected your PC" (SmartScreen):
+
+  1. Click "More info".
+  2. Click "Run anyway".
+
+Windows remembers the choice for that file, so this happens once. It is the only warning
+SEAM triggers: the application itself never asks for administrator rights (the installer
+does, because it writes to Program Files and registers in Installed apps).
 
 WHAT IS IN THE FOLDER
 ---------------------

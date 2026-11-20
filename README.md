@@ -60,7 +60,7 @@ shared, so switching desktops does not change what runs on the phone.
 | Desktop host | Package | Status |
 |---|---|---|
 | **macOS 14+** (Apple Silicon) | [`SEAM-macOS-arm64.dmg`](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.dmg) · [`SEAM-macOS-arm64.zip`](https://github.com/Ferousco-dev/Seam/releases/download/v1.0.0/SEAM-macOS-arm64.zip) | Stable |
-| **Windows 10/11 x64** | `SEAM-Windows-x64.zip` (portable, no installer) — see [below](#windows-x64) | **Experimental** |
+| **Windows 10/11 x64** | `SEAM-Setup-x64.exe` (installer) or `SEAM-Windows-x64.zip` (portable) — see [below](#windows-x64) | **Experimental** |
 
 Whichever desktop host you use, the **same Android companion agent** is pushed to the phone over ADB.
 Nothing is installed on Android — no APK, no root.
@@ -87,38 +87,57 @@ are built by CI and attached to the run as artifacts:
 3. Prefer to build it yourself? The **Run workflow** button on that page builds it on demand; the
    same workflow also runs automatically on pull requests and on `arena/**` development branches.
 
-**Extract and launch**
+**SEAM for Windows is a normal Windows application.** There is nothing to run from a terminal: you
+start it the way you start any other program, and the SEAM window is the whole interface.
 
-1. Portable: unzip `SEAM-Windows-x64.zip`. Keep the `SEAM-Windows-x64` folder intact — the
-   executable expects `seam-agent.jar` and `platform-tools\` beside it, and its runtime DLLs.
-   Installer: run `SEAM-Setup-x64.exe` (SmartScreen → *More info → Run anyway*, the build is not
-   code-signed) and launch **SEAM** from the Start Menu.
-2. Confirm the host can see everything it needs (no phone required):
+**Install or unzip**
 
-   ```powershell
-   .\seam-host.exe --diagnose   # app folder, adb, agent jar, devices - nothing is printed that is secret
-   ```
+1. **Installer:** run `SEAM-Setup-x64.exe`, then open **SEAM** from the Start Menu (or from the
+   desktop shortcut if you ticked that box during setup). The shortcut points straight at the
+   application — no arguments, no console, no script.
+2. **Portable:** unzip `SEAM-Windows-x64.zip` and **double-click `seam-host.exe`** inside the
+   `SEAM-Windows-x64` folder. Keep that folder intact — the executable expects `seam-agent.jar`,
+   `platform-tools\` and its runtime DLLs beside it — but you can move the whole folder anywhere,
+   including a path with spaces.
+3. **SmartScreen, once.** The builds are **not code-signed**, so the first launch of the installer,
+   or of a `seam-host.exe` that came out of a downloaded ZIP, shows *"Windows protected your PC"*.
+   Click **More info → Run anyway**. Windows remembers the decision for that file. This is the only
+   security prompt SEAM triggers; there is no UAC prompt when the application itself starts.
 
-   `adb.exe` is bundled in `platform-tools\` and `seam-agent.jar` sits next to `seam-host.exe`, so
-   this should end with `RESULT: all bundled resources found.` and exit code 0. SEAM resolves both
-   from the folder containing `seam-host.exe` — never from the current directory, `PATH` or `%TEMP%`
-   — so launching from a shortcut or another drive is fine. `Get-Adb.ps1` remains in the package as
-   an optional **repair** tool if `platform-tools\` is missing or corrupt.
-3. Confirm the host itself is healthy (no phone required):
+**Using the window**
 
-   ```powershell
-   .\seam-host.exe --self-test
-   ```
+1. Enable **USB debugging** on the phone (see *Phone requirements* below) and plug it in; tap
+   **ALLOW** on the phone.
+2. SEAM shows the phone within a couple of seconds — it does not need a phone to open, and it never
+   shows a blank window while it looks.
+3. Press **Connect**. SEAM pushes and starts the shared Android agent, authenticates with mutual
+   HMAC-SHA256, and the status pill turns green.
+4. Move the pointer to the screen edge named in the window (right by default) to take control of the
+   phone. **`Ctrl + Alt + Q`** always hands control back to Windows.
+5. Settings (edge, auto-connect, activity length) live in `%APPDATA%\SEAM\ui-settings.json`;
+   **Diagnostics** in the window (or *SEAM diagnostics* in the Start Menu) prints every path SEAM
+   searched and what ADB reports. Closing the window ends the session and removes the input hooks.
 
-4. Connect the phone (below), then start SEAM:
+**Optional: diagnostics and advanced use (PowerShell)**
 
-   ```powershell
-   .\seam-host.exe --trajectory   # pushes + starts the agent, streams a test path: proves the link
-   .\seam-host.exe --capture      # real control; routes to Android on the first mouse movement
-   .\seam-host.exe --help         # --edge right|left|top|bottom, --connect, --device, --jar, --adb
-   ```
+The commands below are **never needed to use SEAM** — the window covers normal use. They exist for
+troubleshooting, for scripted checks, and for the older console-only workflow.
 
-   **`Ctrl + Alt + Q`** returns control to Windows; `q` in the console quits; `r` forces a return.
+```powershell
+# Nothing here touches the network and nothing printed is secret.
+.\seam-host.exe --diagnose     # app folder, adb, agent jar, devices; ends with "RESULT: all bundled resources found."
+.\seam-host.exe --self-test    # offline protocol/auth/frame self-check, no phone needed
+.\seam-host.exe --help         # every option, including --edge, --connect, --device, --jar, --adb
+
+# Console-only session (the pre-window workflow, still supported):
+.\seam-host.exe --trajectory   # pushes + starts the agent and streams a scripted path: proves the link
+.\seam-host.exe --capture      # routes input to Android on the first mouse movement; `q` quits, `r` returns
+```
+
+`adb.exe` is bundled in `platform-tools\` and `seam-agent.jar` sits next to `seam-host.exe`, so
+everything above resolves from the folder containing the executable — never from the current
+directory, `PATH` or `%TEMP%` — whichever way you launched it. `Get-Adb.ps1` remains in the package
+as an optional **repair** tool if `platform-tools\` is missing or corrupt.
 
 **Phone requirements**
 

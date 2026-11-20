@@ -329,6 +329,23 @@ jobs:
           Write-Host ("UI screenshot: {0} ({1:N0} bytes)" -f $png.FullName, $png.Length)
           Write-Host "::notice title=Desktop UI::PE subsystem=GUI (no console), window built and rendered, $($png.Length) byte screenshot"
 
+      # What a user actually does: double-click the icon. --ui-smoke builds the form
+      # synchronously and returns WITHOUT entering Application.Run, so it cannot see the
+      # interactive path (message loop, timers, Shown handler, close path). This step launches
+      # seam-host.exe with no arguments, waits for its main window, proves the message loop is
+      # pumping (SendMessageTimeout WM_NULL), closes it with WM_CLOSE and asserts a clean exit
+      # with no leftover process. The script skips - loudly, with a warning annotation - if the
+      # job has no interactive desktop, rather than reporting a failure it cannot attribute.
+      - name: Desktop UI - interactive launch, message loop and clean close
+        shell: pwsh
+        run: |
+          $script = Join-Path $PWD '.github\scripts\Test-SeamGuiLifecycle.ps1'
+          $exe    = Join-Path $env:APP_DIR 'seam-host.exe'
+          pwsh -NoProfile -NonInteractive -File $script -ExePath $exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "the interactive GUI lifecycle test failed (exit $LASTEXITCODE)"
+          }
+
       - name: App folder - path with spaces and parentheses
         shell: pwsh
         run: |
