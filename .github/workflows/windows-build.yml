@@ -3,7 +3,8 @@ name: Windows build
 # Produces SEAM-Windows-x64.zip as a downloadable workflow artifact.
 #
 # Primary trigger is manual (workflow_dispatch): nothing is built or published unless the
-# maintainer asks for it. A push trigger is scoped to scratch `arena/**` branches only, so a
+# maintainer asks for it. Pull requests into main are also built, so the merge result is
+# verified before it lands. A push trigger is scoped to scratch `arena/**` branches only, so a
 # working branch can be verified before this workflow exists on the default branch (GitHub
 # cannot dispatch a workflow by name until it is on the default branch).
 #
@@ -26,6 +27,9 @@ on:
   push:
     branches:
       - 'arena/**'
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
