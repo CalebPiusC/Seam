@@ -1,0 +1,390 @@
+name: Windows build
+
+# Produces SEAM-Windows-x64.zip as a downloadable workflow artifact.
+#
+# Primary trigger is manual (workflow_dispatch): nothing is built or published unless the
+# maintainer asks for it. Pull requests into main are also built, so the merge result is
+# verified before it lands. A push trigger is scoped to scratch `arena/**` branches only, so a
+# working branch can be verified before this workflow exists on the default branch (GitHub
+# cannot dispatch a workflow by name until it is on the default branch).
+#
+# This workflow never creates a Release and never uploads anywhere but the run's artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_adb:
+        description: >-
+          Include Google's Android Platform-Tools (adb.exe) in the ZIP. Default false:
+          adb is fetched by Get-Adb.ps1 on the user's machine instead. Only enable this if
+          you have accepted the redistribution terms (see THIRD-PARTY-NOTICES.md).
+        type: boolean
+        default: false
+      retention_days:
+        description: "How long the artifact is kept (days)."
+        type: string
+        default: "30"
+  push:
+    branches:
+      - 'arena/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  PROJECT: windows-host/Seam.WindowsHost.csproj
+
+jobs:
+  build:
+    name: Compile, self-test, package
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Show toolchain (diagnostics)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet --info
+          Write-Host "`n--- Java (needed only to rebuild the Android agent) ---"
+          if ($env:JAVA_HOME_17_X64) {
+            $env:JAVA_HOME = $env:JAVA_HOME_17_X64
+            $env:PATH = "$($env:JAVA_HOME)\bin;$env:PATH"
+            Write-Host "JAVA_HOME=$env:JAVA_HOME"
+          }
+          try { java -version } catch { Write-Host "java not on PATH" }
+          Write-Host "ANDROID_HOME=$env:ANDROID_HOME"
+          if (Test-Path "$env:ANDROID_HOME\platform-tools\adb.exe") {
+            & "$env:ANDROID_HOME\platform-tools\adb.exe" version
+          }
+
+      # ---------------------------------------------------------------- compile gate
+      # Nothing below is a substitute for this step. If the C# does not compile, the
+      # workflow fails here and no artifact is produced.
+      - name: Restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore $env:PROJECT
+          if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
+
+      - name: Build (Release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build $env:PROJECT -c Release --no-restore -v normal
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
+
+      - name: Locate built executable
+        id: exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path windows-host\bin\Release -Recurse -Filter seam-host.exe |
+                 Select-Object -First 1
+          if (-not $exe) { throw "seam-host.exe not found under windows-host\bin\Release" }
+          Write-Host "built executable: $($exe.FullName)"
+          "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Self-test (compiled Release binary)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = '${{ steps.exe.outputs.path }}'
+          Write-Host "running: $exe --self-test"
+          & $exe --self-test
+          $code = $LASTEXITCODE
+          Write-Host "self-test exit code: $code"
+          if ($code -ne 0) { throw "self-test FAILED (exit $code)" }
+
+      # ---------------------------------------------------------------- runtime assets
+      - name: Build Android agent (seam-agent.jar) from source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $sdk = $env:ANDROID_HOME; if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+          if (-not $sdk) { throw "ANDROID_HOME / ANDROID_SDK_ROOT is not set on this runner" }
+
+          $androidJar = Join-Path $sdk 'platforms\android-35\android.jar'
+          if (-not (Test-Path $androidJar)) {
+            $androidJar = Get-ChildItem (Join-Path $sdk 'platforms') -Recurse -Filter android.jar |
+                          Sort-Object FullName | Select-Object -Last 1 -ExpandProperty FullName
+          }
+          if (-not $androidJar -or -not (Test-Path $androidJar)) { throw "android.jar not found under $sdk\platforms" }
+
+          $d8 = Join-Path $sdk 'build-tools\35.0.0\d8.bat'
+          if (-not (Test-Path $d8)) {
+            $d8 = Get-ChildItem (Join-Path $sdk 'build-tools') -Recurse -Filter d8.bat |
+                  Sort-Object FullName | Select-Object -Last 1 -ExpandProperty FullName
+          }
+          if (-not $d8 -or -not (Test-Path $d8)) { throw "d8.bat not found under $sdk\build-tools" }
+
+          if ($env:JAVA_HOME_17_X64) {
+            $env:JAVA_HOME = $env:JAVA_HOME_17_X64
+            $env:PATH = "$($env:JAVA_HOME)\bin;$env:PATH"
+          }
+
+          New-Item -ItemType Directory -Force -Path build\agent-classes, dist | Out-Null
+          Remove-Item -Recurse -Force build\agent-classes\* -ErrorAction SilentlyContinue
+          Remove-Item -Force dist\seam-agent.jar -ErrorAction SilentlyContinue
+
+          Write-Host "android.jar = $androidJar"
+          Write-Host "d8          = $d8"
+
+          $sources = Get-ChildItem -Path android-agent\src\main\java -Recurse -Filter *.java |
+                     ForEach-Object { $_.FullName }
+          Write-Host "javac: $($sources.Count) source files"
+          & javac --release 17 -Xlint:all,-serial -cp $androidJar -d build\agent-classes @sources
+          if ($LASTEXITCODE -ne 0) { throw "javac failed with exit code $LASTEXITCODE" }
+
+          $classes = Get-ChildItem -Path build\agent-classes -Recurse -Filter *.class |
+                     ForEach-Object { $_.FullName }
+          & $d8 --min-api 30 --lib $androidJar --output dist\seam-agent.jar @classes
+          if ($LASTEXITCODE -ne 0) { throw "d8 failed with exit code $LASTEXITCODE" }
+
+          $jar = Get-Item dist\seam-agent.jar
+          $hash = (Get-FileHash $jar.FullName -Algorithm SHA256).Hash
+          Write-Host ("seam-agent.jar {0:N0} bytes  sha256={1}" -f $jar.Length, $hash)
+          if ($jar.Length -lt 4096) { throw "seam-agent.jar looks implausibly small" }
+
+      # ---------------------------------------------------------------- publish
+      - name: Publish self-contained single-file (win-x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish $env:PROJECT -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none -p:GenerateDocumentationFile=false `
+            -o build\publish
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
+
+          Remove-Item build\publish\*.pdb -ErrorAction SilentlyContinue
+
+          $exe = 'build\publish\seam-host.exe'
+          if (-not (Test-Path $exe)) { throw "$exe missing after publish" }
+
+          # Self-containment evidence: a single-file publish must not leave sidecar managed
+          # assemblies behind. (The runner has .NET installed, so "it runs here" alone does
+          # not prove the user needs nothing — this structural check does.)
+          $dlls = Get-ChildItem build\publish -Filter *.dll -ErrorAction SilentlyContinue
+          if ($dlls) {
+            throw "publish left $($dlls.Count) sidecar .dll file(s) — not a single-file build: $($dlls.Name -join ', ')"
+          }
+          Write-Host "publish output:"
+          Get-ChildItem build\publish | Format-Table Name, Length -AutoSize
+
+      - name: Self-test (published single-file executable)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "running: build\publish\seam-host.exe --self-test"
+          & .\build\publish\seam-host.exe --self-test
+          $code = $LASTEXITCODE
+          Write-Host "published-binary self-test exit code: $code"
+          if ($code -ne 0) { throw "published single-file binary FAILED self-test (exit $code)" }
+
+          Write-Host "`n--- --help smoke check ---"
+          & .\build\publish\seam-host.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "--help failed with exit code $LASTEXITCODE" }
+
+      # ---------------------------------------------------------------- package
+      - name: Assemble SEAM-Windows-x64
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root    = 'build\staging\SEAM-Windows-x64'
+          $include = Join-Path $env:GITHUB_WORKSPACE 'windows-host\packaging'
+
+          Remove-Item -Recurse -Force build\staging -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          Copy-Item build\publish\seam-host.exe $root
+          Copy-Item dist\seam-agent.jar       $root
+          Copy-Item windows-host\packaging\README-WINDOWS.txt       $root
+          Copy-Item windows-host\packaging\Get-Adb.ps1              $root
+          Copy-Item windows-host\packaging\ADD-ADB-HERE.txt         $root
+          Copy-Item windows-host\packaging\THIRD-PARTY-NOTICES.md   $root
+          Copy-Item LICENSE                                          $root
+
+          $bundleAdb = '${{ inputs.bundle_adb }}' -eq 'true'
+          if ($bundleAdb) {
+            $pt = Join-Path $env:ANDROID_HOME 'platform-tools'
+            if (-not (Test-Path (Join-Path $pt 'adb.exe'))) { throw "bundle_adb=true but no adb.exe on the runner" }
+            New-Item -ItemType Directory -Force -Path (Join-Path $root 'platform-tools') | Out-Null
+            foreach ($f in 'adb.exe','AdbWinApi.dll','AdbWinUsbApi.dll','NOTICE.txt','source.properties') {
+              $p = Join-Path $pt $f
+              if (Test-Path $p) { Copy-Item $p (Join-Path $root 'platform-tools') }
+            }
+            if (-not (Test-Path (Join-Path $root 'platform-tools\NOTICE.txt'))) {
+              Write-Warning "Platform-Tools NOTICE.txt not found; the ZIP's THIRD-PARTY-NOTICES.md still covers adb"
+            }
+            Add-Content (Join-Path $root 'THIRD-PARTY-NOTICES.md') "`n> This ZIP was built with bundle_adb=true and DOES contain Android Platform-Tools in platform-tools\.`n"
+            Write-Host "bundled adb: $(Get-ChildItem (Join-Path $root 'platform-tools') | ForEach-Object Name)"
+          }
+
+          $info = @(
+            "SEAM for Windows x64 — build information"
+            "========================================"
+            ""
+            "commit      : $env:GITHUB_SHA"
+            "ref         : $env:GITHUB_REF"
+            "workflow run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            "built at    : $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) UTC"
+            "runner      : $env:RUNNER_IMAGE_OS $env:RUNNER_IMAGE_VERSION ($env:RUNNER_ARCH)"
+            "dotnet      : $(& dotnet --version)"
+            "target      : net8.0, win-x64, self-contained, single-file"
+            "adb bundled : $bundleAdb"
+            ""
+            "seam-host.exe  : $((Get-FileHash (Join-Path $root 'seam-host.exe')  -Algorithm SHA256).Hash)"
+            "seam-agent.jar : $((Get-FileHash (Join-Path $root 'seam-agent.jar') -Algorithm SHA256).Hash)"
+            ""
+            "file sizes (bytes):"
+            (Get-ChildItem $root -File | ForEach-Object { "  {0,-26} {1,10:N0}" -f $_.Name, $_.Length })
+            ""
+            "Built from source by .github/workflows/windows-build.yml."
+            "Nothing in this ZIP has been validated on physical Windows hardware or a physical phone"
+            "by the build itself: see README-WINDOWS.txt for what to test first."
+          )
+          $info | Set-Content -Path (Join-Path $root 'BUILD-INFO.txt') -Encoding UTF8
+
+          Compress-Archive -Path $root -DestinationPath build\SEAM-Windows-x64.zip -CompressionLevel Optimal -Force
+
+          $zip = Get-Item build\SEAM-Windows-x64.zip
+          $sha = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
+          Write-Host ("ZIP: {0}  {1:N2} MB  sha256={2}" -f $zip.FullName, ($zip.Length / 1MB), $sha)
+
+          "zip=build\SEAM-Windows-x64.zip"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "size=$($zip.Length)"                   | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sha256=$sha"                           | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          Write-Host "`n--- ZIP contents ---"
+          Get-ChildItem $root -Recurse -File |
+            ForEach-Object { "{0,10:N0}  {1}" -f $_.Length, $_.FullName.Substring((Resolve-Path build\staging).Path.Length + 1) }
+
+      # Strongest check available without a phone: unzip exactly what the user will download,
+      # confirm the expected layout, and run the packaged binary's self-test from the extracted
+      # folder. A malformed ZIP, a missing asset or a broken publish cannot get past this.
+      - name: Verify the packaged ZIP (unzip + self-test from the extracted copy)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verify = 'build\verify'
+          Remove-Item -Recurse -Force $verify -ErrorAction SilentlyContinue
+          Expand-Archive -Path build\SEAM-Windows-x64.zip -DestinationPath $verify -Force
+
+          $root = Join-Path $verify 'SEAM-Windows-x64'
+          if (-not (Test-Path $root)) {
+            Write-Host "::error::ZIP does not contain the SEAM-Windows-x64/ folder"
+            throw "ZIP does not contain the SEAM-Windows-x64/ folder"
+          }
+
+          $expected = @(
+            'seam-host.exe', 'seam-agent.jar', 'Get-Adb.ps1', 'ADD-ADB-HERE.txt',
+            'README-WINDOWS.txt', 'THIRD-PARTY-NOTICES.md', 'BUILD-INFO.txt', 'LICENSE'
+          )
+          # Compare by name: Get-ChildItem returns absolute paths even for a relative input.
+          $present = @(Get-ChildItem $root -File | ForEach-Object { $_.Name })
+          $missing = @($expected | Where-Object { $present -notcontains $_ })
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::ZIP is missing: $($missing -join ', ')"
+            throw "ZIP is missing: $($missing -join ', ')"
+          }
+          $unexpected = @($present | Where-Object { $expected -notcontains $_ })
+          if ($unexpected.Count -gt 0) {
+            Write-Host "::warning::ZIP has unexpected top-level file(s): $($unexpected -join ', ')"
+          }
+
+          Write-Host "ZIP contains all $($expected.Count) expected entries:"
+          Get-ChildItem $root -File | Sort-Object Name |
+            ForEach-Object { "  {0,12:N0}  {1}" -f $_.Length, $_.Name }
+
+          # One annotation with the per-file sizes: visible in the UI and readable from the
+          # check-run API, so the packaged layout can be audited without downloading the ZIP.
+          $manifest = (Get-ChildItem $root -File | Sort-Object Name |
+                       ForEach-Object { "$($_.Name)=$($_.Length)" }) -join ' '
+          Write-Host "::notice title=SEAM-Windows-x64.zip manifest::$manifest" 
+
+          Write-Host "`nrunning the packaged binary from the extracted folder..."
+          & (Join-Path $root 'seam-host.exe') --self-test
+          $code = $LASTEXITCODE
+          Write-Host "packaged-binary self-test exit code: $code"
+          if ($code -ne 0) {
+            Write-Host "::error::the binary inside SEAM-Windows-x64.zip failed its self-test (exit $code)"
+            throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $code)"
+          }
+
+          # Record the manifest in the run summary so the layout is visible without the log.
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @(
+            '',
+            '### ZIP manifest (verified by expanding the artifact)',
+            '',
+            '| file | bytes |',
+            '|---|---|'
+          )
+          Get-ChildItem $root -File | Sort-Object Name |
+            ForEach-Object { "| ``$($_.Name)`` | $($_.Length) |" } |
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          # archive:false uploads the .zip verbatim, so the artifact IS SEAM-Windows-x64.zip
+          # (no second zip wrapping it) and its reported size is the real file size.
+          name: SEAM-Windows-x64
+          path: build/SEAM-Windows-x64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days || 30 }}
+
+      # Supplementary: the protocol fixtures are NOT a compilation gate and never replace one.
+      - name: Protocol fixture checks (supplementary, not a compile gate)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python tools/verify_protocol.py
+          python tools/check_java_parity.py
+
+      - name: Job summary
+        if: always()
+        shell: pwsh
+        run: |
+          $status = '${{ job.status }}'
+          $size   = ${{ steps.pack.outputs.size || 0 }}
+          $sha    = '${{ steps.pack.outputs.sha256 }}'
+          $lines = @(
+            "## SEAM Windows build — $status",
+            "",
+            "| item | value |",
+            "|---|---|",
+            "| commit | ``${{ github.sha }}`` |",
+            "| runner | ``${{ runner.os }}`` / ${{ runner.arch }} |",
+            "| artifact | ``SEAM-Windows-x64`` (download from this run's Summary page) |",
+            "| ZIP size | $([math]::Round($size / 1MB, 2)) MB |",
+            "| ZIP sha256 | ``$sha`` |",
+            "",
+            "Download: **Actions → this run → Artifacts → SEAM-Windows-x64**.",
+            "Nothing here has been tested on physical Windows hardware or a physical phone."
+          )
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

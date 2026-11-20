@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Deliberately targets plain `net8.0` (not `net8.0-windows`) and uses ONLY P/Invoke
+    against user32/kernel32. Consequences:
+      - Zero NuGet package references (nothing to restore beyond the SDK).
+      - No WinForms/WPF/WindowsDesktop SDK dependency.
+      - The project *compiles on any OS*; it only *runs* on Windows.
+    This matches the parent project's "no unnecessary dependencies" rule.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Seam.WindowsHost</RootNamespace>
+    <AssemblyName>seam-host</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+adb.exe is NOT included in this ZIP
+===================================
+
+SEAM needs Android's adb (Android Debug Bridge) to push and start seam-agent.jar on
+your phone over USB. adb is a third-party Google/AOSP tool; it is not part of SEAM and
+it is not redistributed here (see THIRD-PARTY-NOTICES.md for the licensing reason).
+
+EASIEST: let the helper fetch it for you
+----------------------------------------
+    powershell -ExecutionPolicy Bypass -File .\Get-Adb.ps1
+
+That downloads Google's official Platform-Tools and unpacks them into this folder as
+
+    platform-tools\adb.exe
+    platform-tools\AdbWinApi.dll
+    platform-tools\AdbWinUsbApi.dll
+
+seam-host.exe checks .\platform-tools\adb.exe first, so after this one command
+everything just works. No PATH changes, no admin rights.
+
+ALTERNATIVES
+------------
+  * Already have adb? Keep it on PATH, or point SEAM at it:  --adb "C:\...\adb.exe"
+  * Want no adb at all? Start the agent on the phone yourself and connect over TCP:
+        seam-host.exe --connect <phone-ip>:27186
+    (Wireless Debugging + `adb connect` is the usual way to get there.)
+
+WHY NOT BUNDLE IT?
+------------------
+Redistributing Google's platform-tools binaries inside a project ZIP means
+redistributing Google SDK binaries under Google's terms, which is a licensing decision
+for this project's maintainer — not something a build script should take silently.
+Running Get-Adb.ps1 keeps the download your own action, under your own acceptance of
+those terms.
+
+If the maintainer decides to bundle adb anyway, the CI workflow supports it explicitly:
+run the "Windows build" workflow with `bundle_adb = true` and the resulting ZIP will
+contain a platform-tools\ folder and a third-party notice.
