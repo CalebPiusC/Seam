@@ -291,34 +291,51 @@ jobs:
           Expand-Archive -Path build\SEAM-Windows-x64.zip -DestinationPath $verify -Force
 
           $root = Join-Path $verify 'SEAM-Windows-x64'
-          if (-not (Test-Path $root)) { throw "ZIP does not contain the SEAM-Windows-x64\ folder" }
+          if (-not (Test-Path $root)) {
+            Write-Host "::error::ZIP does not contain the SEAM-Windows-x64/ folder"
+            throw "ZIP does not contain the SEAM-Windows-x64/ folder"
+          }
 
           $expected = @(
             'seam-host.exe', 'seam-agent.jar', 'Get-Adb.ps1', 'ADD-ADB-HERE.txt',
             'README-WINDOWS.txt', 'THIRD-PARTY-NOTICES.md', 'BUILD-INFO.txt', 'LICENSE'
           )
-          $present = Get-ChildItem $root -Recurse -File | ForEach-Object { $_.FullName.Substring($root.Length + 1) }
-          foreach ($f in $expected) {
-            if ($present -notcontains $f) { throw "ZIP is missing $f" }
+          # Compare by name: Get-ChildItem returns absolute paths even for a relative input.
+          $present = @(Get-ChildItem $root -File | ForEach-Object { $_.Name })
+          $missing = @($expected | Where-Object { $present -notcontains $_ })
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::ZIP is missing: $($missing -join ', ')"
+            throw "ZIP is missing: $($missing -join ', ')"
           }
+          $unexpected = @($present | Where-Object { $expected -notcontains $_ })
+          if ($unexpected.Count -gt 0) {
+            Write-Host "::warning::ZIP has unexpected top-level file(s): $($unexpected -join ', ')"
+          }
+
           Write-Host "ZIP contains all $($expected.Count) expected entries:"
-          Get-ChildItem $root -Recurse -File | ForEach-Object { "  {0,10:N0}  {1}" -f $_.Length, $_.Name }
+          Get-ChildItem $root -File | Sort-Object Name |
+            ForEach-Object { "  {0,12:N0}  {1}" -f $_.Length, $_.Name }
 
           Write-Host "`nrunning the packaged binary from the extracted folder..."
           & (Join-Path $root 'seam-host.exe') --self-test
           $code = $LASTEXITCODE
           Write-Host "packaged-binary self-test exit code: $code"
-          if ($code -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $code)" }
+          if ($code -ne 0) {
+            Write-Host "::error::the binary inside SEAM-Windows-x64.zip failed its self-test (exit $code)"
+            throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $code)"
+          }
 
           # Record the manifest in the run summary so the layout is visible without the log.
-          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          "### ZIP manifest (verified by expanding the artifact)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          "| file | bytes |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          "|---|---|" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          Get-ChildItem $root -Recurse -File |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @(
+            '',
+            '### ZIP manifest (verified by expanding the artifact)',
+            '',
+            '| file | bytes |',
+            '|---|---|'
+          )
+          Get-ChildItem $root -File | Sort-Object Name |
             ForEach-Object { "| ``$($_.Name)`` | $($_.Length) |" } |
-            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
