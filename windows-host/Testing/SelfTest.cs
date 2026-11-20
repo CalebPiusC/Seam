@@ -495,7 +495,7 @@ namespace Seam.WindowsHost.Testing
                 ConnectionDiagnosis.Headline(ConnectionProblem.AgentClosed) !=
                 ConnectionDiagnosis.Headline(ConnectionProblem.HandshakeFailed));
 
-            Check("guidance: every condition has a headline, a sentence and a one-liner",
+            Check("guidance: every condition fits the hero and banner (text bounded)",
                 AllHaveText());
 
             // ---- classification of our own connect failures ----
@@ -519,7 +519,11 @@ namespace Seam.WindowsHost.Testing
                 ConnectionDiagnosis.Guidance(ConnectionProblem.TransportError).Contains("Activity", StringComparison.Ordinal));
         }
 
-        /// <summary>Every reported condition must be printable in the window.</summary>
+        /// <summary>
+        /// Every reported condition must be printable in the window. The Home sentence sits in a
+        /// row that is about 3.8 lines tall at 96 dpi (heroDetail was 297x65 in the UI smoke run),
+        /// so the copy is bounded rather than left to clip.
+        /// </summary>
         private static bool AllHaveText()
         {
             foreach (ConnectionProblem problem in Enum.GetValues<ConnectionProblem>())
@@ -532,6 +536,15 @@ namespace Seam.WindowsHost.Testing
                 if (string.IsNullOrWhiteSpace(ConnectionDiagnosis.Headline(problem)) ||
                     string.IsNullOrWhiteSpace(ConnectionDiagnosis.Guidance(problem)) ||
                     string.IsNullOrWhiteSpace(ConnectionDiagnosis.ShortGuidance(problem)))
+                {
+                    return false;
+                }
+
+                // Measured room: ~180 characters wrap to three lines in the hero row; the banner
+                // is a single line, so its text must stay well under that.
+                if (ConnectionDiagnosis.Guidance(problem).Length > 180 ||
+                    ConnectionDiagnosis.ShortGuidance(problem).Length > 90 ||
+                    ConnectionDiagnosis.Headline(problem).Length > 45)
                 {
                     return false;
                 }

@@ -168,36 +168,34 @@ namespace Seam.WindowsHost.Host
         public static string Guidance(ConnectionProblem problem) => problem switch
         {
             ConnectionProblem.AdbMissing =>
-                "The bundled adb.exe is missing or cannot start. Reinstall SEAM, or run \"seam-host.exe --diagnose\" to see where it looked.",
+                "The bundled adb.exe is missing or cannot start. Reinstall SEAM, or run --diagnose to see where it looked.",
 
             ConnectionProblem.NoDevice =>
-                "Turn on Developer options and USB debugging on the phone, plug in the USB cable, " +
-                "then tap ALLOW on the prompt that appears on the phone. " +
-                "A driver is only the problem if Windows itself shows the phone with a warning in Device Manager.",
+                "Turn on USB debugging, plug in the cable, then tap ALLOW on the phone. " +
+                "A USB driver only matters if Windows flags the phone in Device Manager.",
 
             ConnectionProblem.Unauthorized =>
                 "Unlock the phone and tap ALLOW on the \"Allow USB debugging?\" prompt, then press Connect. " +
-                "Tick \"Always allow from this computer\" so it stops asking.",
+                "Tick \"Always allow\" to stop it asking.",
 
             ConnectionProblem.Offline =>
                 "The USB connection went stale. Unplug the cable, plug it back in, then press Connect.",
 
             ConnectionProblem.WirelessUnavailable =>
-                "adb remembers a Wi-Fi connection to this phone and the phone is not answering. " +
-                "Reconnect it (\"adb connect <phone-ip>:<port>\") or plug the USB cable in, then press Refresh. " +
-                "SEAM does not create the wireless pairing itself; INSTALL.md has the one-time adb pair step.",
+                "adb remembers a Wi-Fi connection to this phone and it is not answering. " +
+                "Reconnect with adb connect, or plug the cable in, then press Refresh.",
 
             ConnectionProblem.AgentNotReady =>
-                "The agent is what carries your mouse and keyboard. Unlock the phone, keep USB debugging on, " +
-                "then unplug and re-plug the cable and press Connect. Its log is on the Diagnostics page.",
+                "The agent carries your mouse and keyboard and it did not start. " +
+                "Unlock the phone, re-plug the cable, press Connect; its log is on Diagnostics.",
 
             ConnectionProblem.AgentClosed =>
-                "The phone accepted the connection and closed it straight away, which usually means a stale " +
-                "agent or a pairing key that changed. SEAM restarted the agent - press Connect again.",
+                "The phone accepted the connection, then closed it - usually a stale agent. " +
+                "SEAM restarted it; press Connect again. Details are in Activity.",
 
             ConnectionProblem.HandshakeFailed =>
-                "The phone and this PC disagree about the pairing key. Press Connect again so SEAM " +
-                "reinstalls the agent with the current key; the fingerprint is on the Diagnostics page.",
+                "The phone and this PC disagree about the pairing key. " +
+                "Press Connect again to reinstall the agent with the current key.",
 
             ConnectionProblem.TransportError =>
                 "Check the cable and the phone's USB mode (file transfer), then press Connect. " +
