@@ -16,6 +16,7 @@ namespace Seam.WindowsHost.Host
         Connecting,
         Connected,
         Unauthorized,
+        PairingRequired,
         Error
     }
 
@@ -179,7 +180,12 @@ namespace Seam.WindowsHost.Host
 
             if (devices.Count == 0)
             {
-                SetState(SessionState.Disconnected, "No phone detected");
+                // A phone advertising Wireless debugging but not paired yet keeps saying so;
+                // the poll must not wipe that message on its way past.
+                if (_state != SessionState.PairingRequired)
+                {
+                    SetState(SessionState.Disconnected, "No phone detected");
+                }
             }
             else if (!devices.Exists(d => d.IsAuthorized))
             {
@@ -210,6 +216,9 @@ namespace Seam.WindowsHost.Host
                 SetState(SessionState.Error, ResourceError ?? "SEAM cannot start a session.");
                 return;
             }
+
+            // A deliberate Connect re-arms automatic discovery and reconnection.
+            UserDisconnected = false;
 
             lock (_gate)
             {
@@ -426,6 +435,8 @@ namespace Seam.WindowsHost.Host
 
         public void Disconnect()
         {
+            // An explicit Disconnect must not be undone by the autopilot a second later.
+            UserDisconnected = true;
             StopRouting();
 
             SeamConnection? connection;
@@ -473,6 +484,114 @@ namespace Seam.WindowsHost.Host
             SetState(SessionState.Disconnected,
                 "The phone disconnected (" + reason + "). Re-plug the USB cable, then press Connect.");
             StatsChanged?.Invoke();
+        }
+
+        // ---- wireless autopilot -----------------------------------------------------------
+
+        private int _wirelessTick;
+        private string _lastAdbConnectTarget = string.Empty;
+        private long _lastAdbConnectTicks;
+
+        /// <summary>
+        /// True from the moment the user presses Disconnect until they press Connect again.
+        /// The autopilot treats it as an instruction and stops dialling until then.
+        /// </summary>
+        public bool UserDisconnected { get; private set; }
+
+        /// <summary>
+        /// One autopilot tick, ported from macOS <c>runAutoPilotTick</c>: connect a device that is
+        /// already visible, otherwise every third tick let adb's mDNS discovery find an
+        /// already-paired Wireless debugging endpoint and attach it. Blocking (adb calls) and
+        /// therefore called from a worker thread; a laptop-sleep or cable-unplug just fails the
+        /// call and the next tick tries again.
+        /// </summary>
+        public void TickWireless()
+        {
+            AdbBootstrapper? adb;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+                adb = _adb;
+            }
+
+            if (adb == null)
+            {
+                return;
+            }
+
+            int tick = Interlocked.Increment(ref _wirelessTick);
+            bool mdnsDue = tick % 3 == 0;
+
+            List<WirelessService> services = mdnsDue
+                ? adb.DiscoverWirelessServices()
+                : new List<WirelessService>();
+
+            WirelessAction action;
+            AdbDevice? target = null;
+
+            lock (_gate)
+            {
+                action = WirelessDiscovery.Decide(new WirelessContext
+                {
+                    AutoConnectEnabled = _settings.AutoConnect,
+                    UserDisconnected = UserDisconnected,
+                    Connected = _connection != null,
+                    Busy = _connecting,
+                    MdnsDue = mdnsDue,
+                    Devices = new List<AdbDevice>(_devices),
+                    Services = services
+                });
+
+                if (action.Kind == WirelessActionKind.ConnectDevice)
+                {
+                    target = _devices.Find(d => d.Serial == action.Target);
+                }
+            }
+
+            switch (action.Kind)
+            {
+                case WirelessActionKind.ConnectDevice when target != null:
+                    Emit("[Wi-Fi] " + (target.IsWirelessAdb ? "Wi-Fi" : "USB") + " device ready: " + target.Serial);
+                    Connect(target);
+                    break;
+
+                case WirelessActionKind.AdbConnect:
+                {
+                    long now = Environment.TickCount64;
+                    if (string.Equals(action.Target, _lastAdbConnectTarget, StringComparison.Ordinal) &&
+                        now - _lastAdbConnectTicks < 20000)
+                    {
+                        return; // adb was just asked; do not hammer a failed endpoint
+                    }
+
+                    _lastAdbConnectTarget = action.Target;
+                    _lastAdbConnectTicks = now;
+
+                    if (!action.Target.Contains(':'))
+                    {
+                        // A Wi-Fi transport adb still remembers but whose socket died.
+                        adb.DisconnectWireless(action.Target);
+                    }
+
+                    Emit("[Wi-Fi] adb connect " + action.Target);
+                    Emit("[Wi-Fi] " + adb.ConnectWireless(action.Target));
+                    RefreshDevices();
+                    break;
+                }
+
+                case WirelessActionKind.NeedPairing:
+                    if (_connection == null && !_connecting && _state != SessionState.PairingRequired)
+                    {
+                        Emit("[Wi-Fi] the phone advertises pairing, not an established link: " + action.Target);
+                        SetState(SessionState.PairingRequired,
+                            "Wireless debugging is on, but this PC and the phone are not paired yet. " +
+                            "No driver is involved. Pair once with the code the phone shows.");
+                    }
+                    break;
+            }
         }
 
         // ---- input routing ----------------------------------------------------------------
@@ -575,6 +694,9 @@ namespace Seam.WindowsHost.Host
         }
 
         private void Emit(string line) => Log?.Invoke(line);
+
+        /// <summary>Writes one line to the Activity log from outside the controller.</summary>
+        public void LogLine(string line) => Emit(line);
 
         public void Dispose()
         {

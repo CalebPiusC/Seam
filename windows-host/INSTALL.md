@@ -77,9 +77,10 @@ a machine you trust.
    computer* if you trust the PC).
 
 Wireless Debugging (**Developer options → Wireless debugging**) is an alternative when the USB
-driver will not cooperate. SEAM does not create that pairing itself: pair once with the bundled
-adb (the three commands are in `MANUAL-VERIFICATION.md` §2.7), press **Refresh**, then
-**Connect** - SEAM uses the Wi-Fi transport adb already established.
+driver will not cooperate. Android requires one authorised pairing with a code the phone displays,
+so pair once with the bundled adb (`MANUAL-VERIFICATION.md` §2.7); after that SEAM finds the phone
+on the network by itself (`adb mdns services`), connects it and reconnects when Wi-Fi drops. No
+command prompt is needed for routine reconnection.
 
 ---
 

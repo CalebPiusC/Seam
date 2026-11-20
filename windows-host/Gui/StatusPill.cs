@@ -46,6 +46,7 @@ namespace Seam.WindowsHost.Gui
             SessionState.Connected => "Connected",
             SessionState.Connecting => "Connecting...",
             SessionState.Unauthorized => "Unauthorized",
+            SessionState.PairingRequired => "Waiting for pairing",
             SessionState.Error => "Connection error",
             _ => "Not connected"
         };
@@ -55,6 +56,7 @@ namespace Seam.WindowsHost.Gui
             SessionState.Connected => Theme.StatusConnected,
             SessionState.Connecting => Theme.StatusBusy,
             SessionState.Unauthorized => Theme.StatusBusy,
+            SessionState.PairingRequired => Theme.StatusBusy,
             SessionState.Error => Theme.StatusError,
             _ => Theme.StatusIdle
         };
@@ -64,6 +66,7 @@ namespace Seam.WindowsHost.Gui
             SessionState.Connected => Theme.StatusConnectedSoft,
             SessionState.Connecting => Theme.StatusBusySoft,
             SessionState.Unauthorized => Theme.StatusBusySoft,
+            SessionState.PairingRequired => Theme.StatusBusySoft,
             SessionState.Error => Theme.StatusErrorSoft,
             _ => Theme.StatusIdleSoft
         };

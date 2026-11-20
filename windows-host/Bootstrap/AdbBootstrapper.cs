@@ -167,6 +167,45 @@ namespace Seam.WindowsHost.Bootstrap
         }
 
         /// <summary>
+        /// `adb mdns services`: the endpoints Android advertises for Wireless debugging. Mirrors
+        /// the macOS call of the same name; parsing lives in WirelessDiscovery so it is testable.
+        /// </summary>
+        public List<Host.WirelessService> DiscoverWirelessServices()
+        {
+            string? output = TryRun(new[] { "mdns", "services" });
+            return Host.WirelessDiscovery.ParseMdnsServices(output);
+        }
+
+        /// <summary>
+        /// `adb connect <ip:port>` for an already-paired Wireless debugging endpoint. Returns the
+        /// raw adb answer so the caller can log exactly what happened ("connected to ...",
+        /// "already connected to ...", "failed to connect ...").
+        /// </summary>
+        public string ConnectWireless(string address)
+        {
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                return "no address";
+            }
+
+            EnsureServer();
+            var (exitCode, stdout, stderr) = Execute(new[] { "connect", address });
+            string answer = (stdout + " " + stderr).Trim();
+            return answer.Length == 0 ? (exitCode == 0 ? "connected" : "adb connect failed") : answer;
+        }
+
+        /// <summary>Drops a stale Wi-Fi transport before re-dialling it.</summary>
+        public void DisconnectWireless(string serial)
+        {
+            if (string.IsNullOrWhiteSpace(serial))
+            {
+                return;
+            }
+
+            TryRun(new[] { "disconnect", serial });
+        }
+
+        /// <summary>
         /// True when the agent's abstract socket exists on the phone (`@seam_uhid` in
         /// <c>/proc/net/unix</c>), i.e. when a forwarded TCP connection will actually be served.
         /// </summary>

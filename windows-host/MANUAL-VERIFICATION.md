@@ -178,6 +178,26 @@ Record: which of 2.1–2.7 failed, the exact window message, and the output of
 problem moment are the most useful evidence, because everything above is about what a person
 sees rather than what a log says.
 
+### 2.8b Wireless discovery and automatic reconnection
+
+Ported from the macOS autopilot: every poll lists `adb devices`, and every third poll runs
+`adb mdns services` and `adb connect`s an already-paired `_adb-tls-connect._tcp` endpoint, then
+starts the session over that transport exactly as it does over USB.
+
+1. Settings -> tick **Connect automatically, including phones on Wi-Fi**.
+2. Phone: Developer options -> Wireless debugging on, phone and PC on the same network.
+3. First time only: phone -> *Pair device with pairing code*, then pair once with the bundled adb
+   (the commands are in §2.7). Android requires that code to be typed on the PC side; SEAM shows
+   **Waiting for the first wireless pairing** until it has been done, and never pretends to bypass it.
+4. After pairing, unplug USB. The status pill goes to Connecting then Connected over Wi-Fi with no
+   command prompt involved.
+5. Interrupt Wi-Fi (airplane mode / leave the network) and restore it: the session reconnects by
+   itself within about 30 s, because the dropped adb transport is re-dialled on the next mDNS tick.
+6. Press **Disconnect**: the autopilot must stay quiet until **Connect** is pressed again.
+
+Pass: steps 4-6 behave as described, and no second session is started while one is connecting or
+connected (Activity shows one `[Link] connecting to ...` line per attempt).
+
 ### 2.9 What the window says when Connect cannot proceed
 
 Each row is one state the code can detect. The headline is what the Home page shows; the

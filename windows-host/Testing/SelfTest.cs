@@ -51,6 +51,7 @@ namespace Seam.WindowsHost.Testing
             TestResourceResolution();
             TestDesktopSupport();
             TestConnectionGuidance();
+            TestWirelessDiscovery();
 
             Console.WriteLine();
             Console.WriteLine($"=== {_passed} passed, {_failed} failed, {_skipped} skipped ===");
@@ -360,7 +361,7 @@ namespace Seam.WindowsHost.Testing
                 UiSettings defaults = UiSettings.Load(path);
                 Check("settings: sane defaults when no file exists",
                     defaults.Edge == "right" && defaults.RoutingOnConnect &&
-                    !defaults.AutoConnect && defaults.MaxLogLines == 500);
+                    defaults.AutoConnect && defaults.MaxLogLines == 500);
 
                 var written = new UiSettings
                 {
@@ -425,6 +426,106 @@ namespace Seam.WindowsHost.Testing
         /// device list, which told users to install an OEM USB driver even when their phone was
         /// simply not plugged in, and pointed at wireless debugging this host cannot set up.
         /// </summary>
+
+        /// <summary>
+        /// The wireless autopilot, ported from macOS `runAutoPilotTick`: which endpoint it dials,
+        /// when it must do nothing, and how it treats the phone's pairing requirement. Pure logic,
+        /// so it runs with no phone, no adb and no Wi-Fi.
+        /// </summary>
+        private static void TestWirelessDiscovery()
+        {
+            Console.WriteLine("\n[7] Wireless discovery and autopilot");
+
+            const string mdnsSample =
+                "List of discovered mdns services\r\n" +
+                "adb-R58M12ABCDE-Xy12Zt\t_adb-tls-connect._tcp\t192.168.1.42:37231\r\n" +
+                "adb-R58M12ABCDE-Qq77Vw\t_adb-tls-pairing._tcp\t192.168.1.42:41003\r\n";
+
+            List<WirelessService> services = WirelessDiscovery.ParseMdnsServices(mdnsSample);
+            Check("wireless: mDNS output yields the advertised endpoints",
+                services.Count == 2 &&
+                services[0].CanConnect && services[0].Address == "192.168.1.42:37231" &&
+                services[1].CanPair && services[1].Address == "192.168.1.42:41003");
+            Check("wireless: a header-only answer yields nothing",
+                WirelessDiscovery.ParseMdnsServices("List of discovered mdns services\r\n").Count == 0);
+            Check("wireless: an empty or missing answer is not a crash",
+                WirelessDiscovery.ParseMdnsServices(null).Count == 0 &&
+                WirelessDiscovery.ParseMdnsServices("").Count == 0);
+            Check("wireless: IPv6 advertisements are not dialled",
+                WirelessDiscovery.ParseMdnsServices(
+                    "x\t_adb-tls-connect._tcp\t[fe80::1]:40000\r\n").Count == 0);
+
+            var usbPhone = new AdbDevice { Serial = "R58M12ABCDE", State = "device", Model = "SM_A055F" };
+            var wifiPhone = new AdbDevice { Serial = "192.168.1.42:37231", State = "device", Model = "SM_A055F" };
+            var deadWifi = new AdbDevice { Serial = "192.168.1.42:37231", State = "offline", Model = "SM_A055F" };
+
+            WirelessContext Ctx(bool auto = true, bool userDisconnected = false, bool connected = false,
+                bool busy = false, bool mdnsDue = true, AdbDevice[]? devices = null,
+                List<WirelessService>? mdns = null) => new WirelessContext
+                {
+                    AutoConnectEnabled = auto,
+                    UserDisconnected = userDisconnected,
+                    Connected = connected,
+                    Busy = busy,
+                    MdnsDue = mdnsDue,
+                    Devices = devices ?? Array.Empty<AdbDevice>(),
+                    Services = mdns ?? new List<WirelessService>()
+                };
+
+            Check("wireless: nothing advertised and nothing plugged in means nothing to do",
+                WirelessDiscovery.Decide(Ctx()).Kind == WirelessActionKind.None);
+
+            Check("wireless: an authorised USB phone is connected as before",
+                WirelessDiscovery.Decide(Ctx(devices: new[] { usbPhone })) is
+                    { Kind: WirelessActionKind.ConnectDevice, Target: "R58M12ABCDE" });
+
+            Check("wireless: an already-paired Wi-Fi device is used without adb connect",
+                WirelessDiscovery.Decide(Ctx(devices: new[] { wifiPhone })) is
+                    { Kind: WirelessActionKind.ConnectDevice, Target: "192.168.1.42:37231" });
+
+            Check("wireless: USB wins when both transports are present",
+                WirelessDiscovery.Decide(Ctx(devices: new[] { wifiPhone, usbPhone })).Target == "R58M12ABCDE");
+
+            Check("wireless: an advertised connect endpoint is dialled through adb",
+                WirelessDiscovery.Decide(Ctx(mdns: services)) is
+                    { Kind: WirelessActionKind.AdbConnect, Target: "192.168.1.42:37231" });
+
+            Check("wireless: mDNS is only probed on its own tick",
+                WirelessDiscovery.Decide(Ctx(mdnsDue: false, mdns: services)).Kind == WirelessActionKind.None);
+
+            Check("wireless: pairing-only advertisement is reported as awaiting pairing",
+                WirelessDiscovery.Decide(Ctx(mdns: new List<WirelessService> { services[1] })) is
+                    { Kind: WirelessActionKind.NeedPairing, Target: "192.168.1.42:41003" });
+
+            Check("wireless: an endpoint adb already lists is not dialled twice",
+                WirelessDiscovery.Decide(Ctx(devices: new[] { wifiPhone }, mdns: services)).Kind ==
+                WirelessActionKind.ConnectDevice);
+
+            Check("wireless: a dropped Wi-Fi transport is re-dialled (automatic recovery)",
+                WirelessDiscovery.Decide(Ctx(devices: new[] { deadWifi })) is
+                    { Kind: WirelessActionKind.AdbConnect, Target: "192.168.1.42:37231" });
+
+            Check("wireless: no duplicate session while connecting or connected",
+                WirelessDiscovery.Decide(Ctx(busy: true, devices: new[] { usbPhone })).Kind == WirelessActionKind.None &&
+                WirelessDiscovery.Decide(Ctx(connected: true, devices: new[] { wifiPhone })).Kind == WirelessActionKind.None);
+
+            Check("wireless: Disconnect stops the autopilot until Connect is pressed",
+                WirelessDiscovery.Decide(Ctx(userDisconnected: true, devices: new[] { wifiPhone })).Kind ==
+                WirelessActionKind.None);
+
+            Check("wireless: automatic connection can be switched off",
+                WirelessDiscovery.Decide(Ctx(auto: false, devices: new[] { wifiPhone }, mdns: services)).Kind ==
+                WirelessActionKind.None);
+
+            string pairHeadline = ConnectionDiagnosis.Headline(ConnectionProblem.PairingRequired);
+            string pairText = ConnectionDiagnosis.Guidance(ConnectionProblem.PairingRequired);
+            Check("wireless: the pairing state explains the one-time code, not a driver",
+                pairHeadline.Contains("pairing", StringComparison.OrdinalIgnoreCase) &&
+                pairText.Contains("pairing code", StringComparison.OrdinalIgnoreCase) &&
+                !pairText.Contains("OEM", StringComparison.OrdinalIgnoreCase) &&
+                pairText.Length <= 180);
+        }
+
         private static void TestConnectionGuidance()
         {
             Console.WriteLine("\n[6] Connection guidance (USB vs wireless)");

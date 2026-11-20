@@ -21,8 +21,12 @@ namespace Seam.WindowsHost.Host
         /// <summary>Install the input hooks as soon as a session connects.</summary>
         public bool RoutingOnConnect { get; set; } = true;
 
-        /// <summary>Connect automatically when an authorised device appears.</summary>
-        public bool AutoConnect { get; set; } = false;
+        /// <summary>
+        /// Connect automatically when an authorised device appears - over USB or over Wi-Fi, once
+        /// adb's mDNS discovery has attached an already-paired Wireless debugging endpoint. On by
+        /// default, matching the macOS autopilot; Disconnect is still an explicit instruction.
+        /// </summary>
+        public bool AutoConnect { get; set; } = true;
 
         /// <summary>Lines kept in the activity panel before the oldest are dropped.</summary>
         public int MaxLogLines { get; set; } = 500;

@@ -28,6 +28,7 @@ namespace Seam.WindowsHost.Gui
         private readonly System.Windows.Forms.Timer _pollTimer = new() { Interval = 2500 };
 
         private bool _polling;
+        private bool _wirelessBusy;
         private bool _shuttingDown;
         private bool _diagnosticsRequested;
         private SessionState _lastState = SessionState.Disconnected;
@@ -122,7 +123,7 @@ namespace Seam.WindowsHost.Gui
             if (_interactive)
             {
                 _hookTimer.Tick += (_, _) => OnHookTick();
-                _pollTimer.Tick += (_, _) => RefreshDevicesAsync();
+                _pollTimer.Tick += (_, _) => { RefreshDevicesAsync(); TickWirelessAsync(); };
                 _hookTimer.Start();
                 _pollTimer.Start();
                 Shown += (_, _) => RefreshDevicesAsync();
@@ -863,7 +864,7 @@ namespace Seam.WindowsHost.Gui
 
             grid.Controls.Add(Theme.SectionLabel("CONNECTION"), 0, 0);
 
-            _autoConnect.Text = "Connect automatically when an authorised phone appears";
+            _autoConnect.Text = "Connect automatically, including phones on Wi-Fi (Wireless debugging)";
             StyleCheckBox(_autoConnect);
             _autoConnect.Dock = DockStyle.Fill;
             grid.Controls.Add(_autoConnect, 0, 1);
@@ -1151,6 +1152,9 @@ namespace Seam.WindowsHost.Gui
                 case SessionState.Error:
                     ShowProblemBanner(ConnectionDiagnosis.ClassifyFailure(detail), warning: false);
                     break;
+                case SessionState.PairingRequired:
+                    ShowProblemBanner(ConnectionProblem.PairingRequired, warning: true);
+                    break;
                 case SessionState.Connecting:
                     _banner.HideBanner();
                     break;
@@ -1238,6 +1242,7 @@ namespace Seam.WindowsHost.Gui
                 _lblStateDetail.Text = _device.IsWirelessAdb
                     ? "Connected over Wi-Fi through adb, authenticated with a mutual HMAC-SHA256 key."
                     : "Connected over USB via ADB forward, authenticated with a mutual HMAC-SHA256 key.";
+                // Both transports reach the agent the same way on Windows: an adb forward.
                 _lblDeviceMeta.Text = _device.Serial + " · " + (_session.Endpoint ?? "adb forward");
             }
             else if (_session.State == SessionState.Connecting)
@@ -1253,6 +1258,12 @@ namespace Seam.WindowsHost.Gui
                 _lblStateTitle.Text = ConnectionDiagnosis.Headline(problem);
                 _lblStateDetail.Text = ConnectionDiagnosis.Guidance(problem);
                 _lblDeviceMeta.Text = Shorten(_session.Detail, 110);
+            }
+            else if (_session.State == SessionState.PairingRequired)
+            {
+                _lblStateTitle.Text = ConnectionDiagnosis.Headline(ConnectionProblem.PairingRequired);
+                _lblStateDetail.Text = ConnectionDiagnosis.Guidance(ConnectionProblem.PairingRequired);
+                _lblDeviceMeta.Text = ConnectionDiagnosis.TechnicalHint(ConnectionProblem.PairingRequired);
             }
             else
             {
@@ -1440,6 +1451,36 @@ namespace Seam.WindowsHost.Gui
             UpdateHome();
             UpdateRoutingCard();
             UpdateButtons();
+        }
+
+        /// <summary>
+        /// Background half of the wireless autopilot (macOS runAutoPilotTick): one tick per poll,
+        /// mDNS every third tick, all of it off the UI thread. Overlapping ticks are skipped so a
+        /// slow adb call can never queue a second session request.
+        /// </summary>
+        private void TickWirelessAsync()
+        {
+            if (_wirelessBusy || _polling || _shuttingDown)
+            {
+                return;
+            }
+
+            _wirelessBusy = true;
+            Task.Run(() =>
+            {
+                try
+                {
+                    _session.TickWireless();
+                }
+                catch (Exception ex)
+                {
+                    _session.LogLine("[Wi-Fi] autopilot tick failed: " + ex.Message);
+                }
+                finally
+                {
+                    _wirelessBusy = false;
+                }
+            });
         }
 
         private void RefreshDevicesAsync()
