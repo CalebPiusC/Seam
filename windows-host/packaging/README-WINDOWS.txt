@@ -4,6 +4,11 @@ SEAM for Windows — x64 portable build
 This folder is SEAM's Windows host, packaged as a self-contained .NET 8 build.
 You do NOT need to install .NET, the .NET SDK, or Visual Studio.
 
+GETTING THE FILES OUT
+---------------------
+The ZIP is flat: Windows Explorer's "Extract All" creates a single SEAM-Windows-x64 folder
+and puts these files directly inside it. Everything below is meant to stay in that folder.
+
 CONTENTS
 --------
   seam-host.exe              The SEAM Windows host (self-contained, single file)

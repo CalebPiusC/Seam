@@ -96,7 +96,8 @@ built by CI and attached to the run as an artifact:
    powershell -ExecutionPolicy Bypass -File .\Get-Adb.ps1
    ```
 
-   This downloads Google's official Android Platform-Tools into `platform-tools\`. `adb.exe` is
+   This runs on the **Windows PowerShell 5.1** that ships with Windows 11 (PowerShell 7 is not
+   required) and downloads Google's official Android Platform-Tools into `platform-tools\`. `adb.exe` is
    deliberately **not** bundled in the ZIP (it is a Google/AOSP binary — see the
    `THIRD-PARTY-NOTICES.md` inside the package); `seam-host.exe` looks in `platform-tools\` first,
    so no PATH changes are needed.
@@ -131,6 +132,9 @@ built by CI and attached to the run as an artifact:
   prompts and the lock screen are invisible to those hooks by design.
 
 **What is in the ZIP**
+
+The archive is **flat** — extracting it gives you one `SEAM-Windows-x64` folder with these files
+directly inside, with no second folder of the same name to click through:
 
 ```text
 SEAM-Windows-x64/

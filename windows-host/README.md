@@ -34,7 +34,8 @@ dotnet restore  →  dotnet build -c Release  →  seam-host.exe --self-test
    →  upload artifact
 ```
 
-Inside the ZIP:
+Inside the ZIP (flat layout — no folder-inside-a-folder, so Windows Explorer's *Extract All*
+produces exactly one `SEAM-Windows-x64` folder):
 
 ```text
 SEAM-Windows-x64/

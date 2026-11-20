@@ -269,7 +269,10 @@ jobs:
           )
           $info | Set-Content -Path (Join-Path $root 'BUILD-INFO.txt') -Encoding UTF8
 
-          Compress-Archive -Path $root -DestinationPath build\SEAM-Windows-x64.zip -CompressionLevel Optimal -Force
+          # Flat archive: the FILES go at the ZIP root. Windows Explorer's "Extract All"
+          # already creates a folder named after the ZIP, so nesting a SEAM-Windows-x64
+          # folder inside produced the "two identically named folders" problem users hit.
+          Compress-Archive -Path (Join-Path $root '*') -DestinationPath build\SEAM-Windows-x64.zip -CompressionLevel Optimal -Force
 
           $zip = Get-Item build\SEAM-Windows-x64.zip
           $sha = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
@@ -294,11 +297,12 @@ jobs:
           Remove-Item -Recurse -Force $verify -ErrorAction SilentlyContinue
           Expand-Archive -Path build\SEAM-Windows-x64.zip -DestinationPath $verify -Force
 
-          $root = Join-Path $verify 'SEAM-Windows-x64'
-          if (-not (Test-Path $root)) {
-            Write-Host "::error::ZIP does not contain the SEAM-Windows-x64/ folder"
-            throw "ZIP does not contain the SEAM-Windows-x64/ folder"
+          # Guard against the old nested layout: files must sit at the ZIP root.
+          if (Test-Path (Join-Path $verify 'SEAM-Windows-x64')) {
+            Write-Host "::error::ZIP contains a nested SEAM-Windows-x64/ folder - users would have to go through two folders"
+            throw "ZIP contains a nested SEAM-Windows-x64/ folder (flat layout required)"
           }
+          $root = $verify
 
           $expected = @(
             'seam-host.exe', 'seam-agent.jar', 'Get-Adb.ps1', 'ADD-ADB-HERE.txt',
@@ -346,6 +350,77 @@ jobs:
           Get-ChildItem $root -File | Sort-Object Name |
             ForEach-Object { "| ``$($_.Name)`` | $($_.Length) |" } |
             Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+      # Windows PowerShell 5.1 (powershell.exe) is what people actually run on Windows 11,
+      # and it is NOT PowerShell 7. A BOM-less UTF-8 script is read as ANSI by 5.1, so a UTF-8
+      # em dash turns into a typographic quote and cascades into ParserErrors - that shipped once.
+      # These tests run on the packaged file, under 5.1, and fail the build if it regresses.
+      - name: Get-Adb.ps1 - Windows PowerShell 5.1 compatibility and functional test
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSVersion.Major -ne 5) {
+            throw "This step must run on Windows PowerShell 5.1, got $($PSVersionTable.PSVersion)"
+          }
+          Write-Host "shell: Windows PowerShell $($PSVersionTable.PSVersion)"
+
+          $pkg    = Join-Path $env:GITHUB_WORKSPACE 'build\verify'
+          $script = Join-Path $pkg 'Get-Adb.ps1'
+          if (-not (Test-Path -LiteralPath $script)) { throw "Get-Adb.ps1 missing from the packaged ZIP" }
+
+          # --- encoding guards -------------------------------------------------
+          $bytes = [System.IO.File]::ReadAllBytes($script)
+          if (-not ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)) {
+            throw "Get-Adb.ps1 has no UTF-8 BOM; Windows PowerShell 5.1 would read it as ANSI"
+          }
+          $badOffsets = @()
+          for ($i = 3; $i -lt $bytes.Length; $i++) {
+            if ($bytes[$i] -gt 127) { $badOffsets += $i }
+          }
+          if ($badOffsets.Count -gt 0) {
+            $show = $badOffsets[0..([Math]::Min(9, $badOffsets.Count - 1))] -join ', '
+            throw "Get-Adb.ps1 contains $($badOffsets.Count) non-ASCII byte(s) (offsets: $show)"
+          }
+          Write-Host ("encoding: UTF-8 BOM + {0} ASCII bytes - OK" -f ($bytes.Length - 3))
+
+          # --- parse under 5.1 -------------------------------------------------
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host ("PARSE {0}:{1}: {2}" -f $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Message) }
+            throw "$($errors.Count) parse error(s) in Get-Adb.ps1 under Windows PowerShell 5.1"
+          }
+          Write-Host ("parse: 0 errors, {0} tokens - OK" -f $tokens.Count)
+
+          # --- functional: fresh install --------------------------------------
+          Write-Host "`n--- run 1: fresh install (download, extract, verify) ---"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+          if ($LASTEXITCODE -ne 0) { throw "Get-Adb.ps1 fresh install failed with exit code $LASTEXITCODE" }
+
+          $adb = Join-Path $pkg 'platform-tools\adb.exe'
+          foreach ($f in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $pkg "platform-tools\$f"))) { throw "$f missing after install" }
+          }
+          & $adb version
+          if ($LASTEXITCODE -ne 0) { throw "installed adb.exe does not run" }
+
+          # --- functional: existing installation is handled safely -------------
+          Write-Host "`n--- run 2: adb already installed (must be a fast no-op, exit 0) ---"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+          $sw.Stop()
+          if ($LASTEXITCODE -ne 0) { throw "Get-Adb.ps1 no-op run failed with exit code $LASTEXITCODE" }
+          if ($sw.Elapsed.TotalSeconds -gt 60) { throw "no-op run took $([int]$sw.Elapsed.TotalSeconds)s - it probably re-downloaded" }
+          Write-Host ("no-op run: {0:N1}s - OK" -f $sw.Elapsed.TotalSeconds)
+
+          # --- functional: damaged install is repaired, not trusted ------------
+          Write-Host "`n--- run 3: platform-tools present but adb.exe missing (must repair) ---"
+          Remove-Item -LiteralPath $adb -Force
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+          if ($LASTEXITCODE -ne 0) { throw "Get-Adb.ps1 repair run failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath $adb)) { throw "adb.exe was not restored" }
+          Write-Host "repair run: adb.exe restored - OK"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
