@@ -72,6 +72,7 @@ namespace Seam.WindowsHost.Gui
         private readonly NumericUpDown _maxLines = new();
         private readonly PillButton _btnSaveSettings = new();
         private readonly Label _lblSettingsStatus = Theme.MakeLabel(string.Empty, Theme.Caption, Theme.TextTertiary, ContentAlignment.MiddleLeft);
+        private readonly Label _lblAppInfo = Theme.MakeLabel(string.Empty, Theme.Mono, Theme.TextTertiary, ContentAlignment.TopLeft);
 
         // ---- diagnostics ----
         private readonly TextBox _diagOutput = new();
@@ -100,6 +101,7 @@ namespace Seam.WindowsHost.Gui
             ApplyIcon();
 
             BuildUi();
+            NameControls();
             LoadSettingsIntoPage();
             WireEvents();
 
@@ -118,6 +120,36 @@ namespace Seam.WindowsHost.Gui
             }
 
             ResumeLayout(true);
+        }
+
+        /// <summary>
+        /// Stable names for the controls the CI layout dump reports on. They double as the
+        /// identifiers used by accessibility tooling, so they are worth having anyway.
+        /// </summary>
+        private void NameControls()
+        {
+            _nav.Name = "nav";
+            _pill.Name = "statusPill";
+            _btnConnect.Name = "connect";
+            _btnDisconnect.Name = "disconnect";
+            _btnRefresh.Name = "refresh";
+            _btnToggleRouting.Name = "toggleRouting";
+            _arrangement.Name = "arrangement";
+            _lblStateTitle.Name = "heroTitle";
+            _lblStateDetail.Name = "heroDetail";
+            _lblRoutingOwner.Name = "routingOwner";
+            _log.Name = "activityLog";
+            _chkFollow.Name = "followToggle";
+            _btnCopyLog.Name = "copyLog";
+            _btnClearLog.Name = "clearLog";
+            _edge.Name = "edgeSelector";
+            _autoConnect.Name = "autoConnect";
+            _routingOnConnect.Name = "routingOnConnect";
+            _maxLines.Name = "linesKept";
+            _btnSaveSettings.Name = "saveSettings";
+            _diagOutput.Name = "diagOutput";
+            _btnCopyDiag.Name = "copyReport";
+            _banner.Name = "banner";
         }
 
         private void ApplyIcon()
@@ -614,7 +646,7 @@ namespace Seam.WindowsHost.Gui
                 Dock = DockStyle.Fill,
                 BackColor = Theme.Background,
                 ColumnCount = 1,
-                RowCount = 8,
+                RowCount = 9,
                 Margin = Padding.Empty,
                 Padding = new Padding(28, 2, 28, 24)
             };
@@ -624,12 +656,15 @@ namespace Seam.WindowsHost.Gui
             content.RowStyles.Add(new RowStyle(SizeType.Absolute, 104f));  // connection
             content.RowStyles.Add(new RowStyle(SizeType.Absolute, 14f));
             content.RowStyles.Add(new RowStyle(SizeType.Absolute, 104f));  // activity
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 14f));
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 108f));  // application
             content.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             content.RowStyles.Add(new RowStyle(SizeType.Absolute, 52f));
 
             content.Controls.Add(BuildInputSettingsCard(), 0, 0);
             content.Controls.Add(BuildConnectionSettingsCard(), 0, 2);
             content.Controls.Add(BuildActivitySettingsCard(), 0, 4);
+            content.Controls.Add(BuildApplicationCard(), 0, 6);
 
             var footer = new TableLayoutPanel
             {
@@ -652,7 +687,7 @@ namespace Seam.WindowsHost.Gui
             _btnSaveSettings.Height = 34;
             _btnSaveSettings.Margin = new Padding(0, 8, 0, 8);
             footer.Controls.Add(_btnSaveSettings, 1, 0);
-            content.Controls.Add(footer, 0, 6);
+            content.Controls.Add(footer, 0, 8);
 
             page.Controls.Add(content, 0, 1);
             return page;
@@ -768,6 +803,26 @@ namespace Seam.WindowsHost.Gui
             row.Controls.Add(text, 0, 0);
             row.Controls.Add(_maxLines, 1, 0);
             grid.Controls.Add(row, 0, 1);
+
+            card.Controls.Add(grid);
+            return card;
+        }
+
+        private Control BuildApplicationCard()
+        {
+            var card = new CardPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            var grid = SettingsGrid(3);
+
+            grid.Controls.Add(Theme.SectionLabel("APPLICATION"), 0, 0);
+
+            _lblAppInfo.Dock = DockStyle.Fill;
+            grid.Controls.Add(_lblAppInfo, 0, 1);
+
+            var hint = Theme.MakeLabel(
+                "Settings live in %APPDATA%\\SEAM\\ui-settings.json. Closing the window ends the session.",
+                Theme.Caption, Theme.TextTertiary, ContentAlignment.BottomLeft);
+            hint.Dock = DockStyle.Fill;
+            grid.Controls.Add(hint, 0, 2);
 
             card.Controls.Add(grid);
             return card;
@@ -1131,6 +1186,11 @@ namespace Seam.WindowsHost.Gui
                 ? "adb missing"
                 : "adb " + (_session.AdbIsBundled ? "bundled" : "system");
             _lblRailVersion.Text = "Version " + Host.DiagnosticsReport.VersionString + " · " + adb;
+
+            string adbPath = _session.AdbPath == null
+                ? "adb: not found - reinstall SEAM"
+                : "adb: " + (_session.AdbIsBundled ? "bundled with SEAM" : "system install");
+            _lblAppInfo.Text = adbPath + "\r\n" + _session.AppDirectory;
         }
 
         private void UpdateButtons()

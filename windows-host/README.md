@@ -122,16 +122,19 @@ hardware-verified console mode uses (`AppLayout`, `SeamAuthenticator`, `AdbBoots
 `SeamConnection`, `WindowsInputCapture`) - no protocol, transport or control-routing code is
 duplicated, and the console path is untouched.
 
-**What the window shows.**
+**What the window shows.** A compact navigation rail (Home / Activity / Settings /
+Diagnostics) and one page at a time, so the log no longer sits next to the connection controls.
 
 | Area | Contents |
 |---|---|
-| Header | SEAM mark, status pill: `Not connected` / `Connecting...` / `Connected` / `Unauthorized` / `Connection error`, and Diagnostics / Settings |
-| Device card | Phone model and serial, connection detail, a short cause-and-fix hint, Connect (or Reconnect) / Disconnect / Refresh |
-| Input routing card | Who has the pointer right now (`Windows` / `Android phone`), what to do, live counters (sent / received / forwarded / uptime), and Enable / Stop input sharing |
-| Activity | Timestamped log with severity colours, Copy and Clear, capped at the configured length |
+| Rail | SEAM mark, the four destinations, the status pill (`Not connected` / `Connecting...` / `Connected` / `Unauthorized` / `Connection error`), version and whether adb is bundled |
+| Home - status | Phone model or `No phone detected`, one sentence of cause-and-fix, serial and endpoint, Connect (or Reconnect) / Disconnect / Refresh |
+| Home - arrangement | Read-only diagram of this PC and the phone on the configured screen edge; the tile that owns the pointer is drawn in the accent colour |
+| Home - input sharing | Who has the pointer right now (`Windows` / `Android phone`), what to do, live counters (sent / received / forwarded / uptime), Enable / Stop input sharing |
+| Activity | Timestamped log with severity colours, follow-latest, Copy and Clear, capped at the configured length - collected whether or not the page is open |
+| Settings | Screen edge, start sharing on connect, auto-connect, lines kept, and Save |
+| Diagnostics | The same report as `--diagnose`, copyable, refreshed on open |
 | Banner | Inline, dismissible message for unauthorised devices and connection errors - never a modal |
-| Footer | Version, `adb: bundled`, install folder, and `Ctrl + Alt + Q returns control to Windows` |
 
 Empty, loading and error states are first class: with no phone the window says *"No phone
 detected"* and lists the three steps that make one appear; while connecting the device card says
@@ -391,11 +394,11 @@ windows-host/
 ├── app.manifest                   PerMonitorV2 DPI, Windows 10/11, asInvoker
 ├── Gui/                           the desktop application (WinForms, no NuGet packages)
 │   ├── SeamGui.cs                 Application entry, --ui-smoke / --ui-screenshot
-│   ├── MainForm.cs                window: status, device card, routing card, activity log
-│   ├── SettingsForm.cs            edge, auto-connect, activity length
-│   ├── DiagnosticsForm.cs         the same report as --diagnose
+│   ├── MainForm.cs                shell: rail, page host, Home page and all state rendering
+│   ├── NavRail.cs                 Home / Activity / Settings / Diagnostics navigation
+│   ├── ArrangementPanel.cs        read-only PC + phone diagram for the configured edge
 │   ├── StatusPill.cs / PillButton.cs / AlertBanner.cs / LogView.cs   small themed controls
-│   └── Theme.cs                   colours, fonts, card panel
+│   └── Theme.cs                   graphite palette, Segoe UI Variable ramp, card panel
 ├── Host/
 │   ├── SessionController.cs       one place that owns adb, auth, session and input hooks
 │   ├── DiagnosticsReport.cs       shared report (CLI + window)

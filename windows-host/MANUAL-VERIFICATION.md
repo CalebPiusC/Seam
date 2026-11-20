@@ -60,7 +60,8 @@ With no phone attached, launch SEAM four ways and confirm each one **opens the w
 Pass, for all four:
 
 - The window appears within ~3 seconds: title `SEAM`, SEAM icon in the title bar and on the
-  taskbar (not a generic white icon), status pill showing **Disconnected**.
+  taskbar (not a generic white icon), left rail with **Home** selected, and the status pill
+  reading **Not connected**.
 - **No console window flashes** and no black window is left behind.
 - **No UAC prompt** for the application itself (the installer is different: it elevates).
 - No crash dialog and no error banner just because there is no phone.
@@ -89,12 +90,18 @@ stays responsive (Windows does not report "Not Responding", no spinning cursor o
 
 Do each of these and note anything that does nothing, throws, or looks broken:
 
-- **Settings:** open it, change the edge (right → left), toggle *auto-connect*, change the
-  activity length, **Save**, close the window, reopen SEAM. Pass: the values are still there
+- **Settings:** open the Settings page in the left rail, change the edge (right → left), toggle
+  *auto-connect*, change the activity length, **Save settings**, close the window, reopen SEAM.
+  Pass: the values are still there
   (`%APPDATA%\SEAM\ui-settings.json`), and the hint text in the window names the new edge.
-- **Diagnostics:** open it. Pass: a report within a few seconds, ending with
+- **Diagnostics:** open the Diagnostics page in the left rail. Pass: a report within a few
+  seconds, ending with
   `RESULT: all bundled resources found.`, containing a short `fingerprint:` and **no long key**.
-- **Copy log:** click it, paste into Notepad. Pass: the visible log text is on the clipboard.
+- **Activity:** open it, watch a line arrive with a session running, tick/untick **Follow latest**.
+  Pass: lines carry a timestamp, severity colours are only green/amber/red for real events, the
+  list stops auto-scrolling when follow is off, and returning to Home does not lose lines.
+- **Copy log:** on the Activity page, click **Copy log**, paste into Notepad. Pass: the visible
+  log text is on the clipboard.
 - **Clear log:** click it. Pass: the log empties and the placeholder text returns.
 - **Refresh:** click it. Pass: it does not error with no phone attached.
 - **Connect / Disconnect / Enable input sharing:** with no phone these must be disabled or

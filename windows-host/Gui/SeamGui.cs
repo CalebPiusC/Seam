@@ -127,6 +127,37 @@ namespace Seam.WindowsHost.Gui
             form.DrawToBitmap(bitmap, new Rectangle(0, 0, form.Width, form.Height));
             bitmap.Save(path, ImageFormat.Png);
             Console.WriteLine($"UI screenshot written: {path} ({bitmap.Width}x{bitmap.Height}, page {page})");
+            DumpLayout(form, page);
+        }
+
+        /// <summary>
+        /// Prints the geometry of the controls that define each page, so a collapsed or
+        /// overlapping layout is visible in the CI log even when nobody opens the PNG.
+        /// </summary>
+        private static void DumpLayout(MainForm form, GuiPage page)
+        {
+            string[] names =
+            {
+                "nav", "statusPill", "heroTitle", "heroDetail", "connect", "disconnect", "refresh",
+                "arrangement", "routingOwner", "toggleRouting", "activityLog", "followToggle",
+                "copyLog", "edgeSelector", "autoConnect", "linesKept", "saveSettings",
+                "copyReport", "diagOutput"
+            };
+
+            Console.WriteLine($"[ui-layout] page={page} window={form.Width}x{form.Height}");
+            foreach (string name in names)
+            {
+                Control[] found = form.Controls.Find(name, true);
+                if (found.Length == 0)
+                {
+                    Console.WriteLine($"   {name}: not present on this page");
+                    continue;
+                }
+
+                Control control = found[0];
+                Console.WriteLine($"   {name}: {control.Bounds.X},{control.Bounds.Y} " +
+                                  $"{control.Width}x{control.Height} visible={control.Visible} enabled={control.Enabled}");
+            }
         }
 
         /// <summary>Builds "ui-preview-activity.png" next to "ui-preview.png".</summary>
