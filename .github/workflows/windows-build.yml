@@ -236,38 +236,39 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
+
           $exe = Join-Path $env:APP_DIR 'seam-host.exe'
           $appFull = (Resolve-Path $env:APP_DIR).Path
 
           Write-Host "`n--- --diagnose (from the app folder) ---"
-          $diag = (& $exe --diagnose) -join "`n"
-          $code = $LASTEXITCODE
-          Write-Host $diag
-          if ($code -ne 0) { throw "--diagnose reported a problem (exit $code)" }
-
-          if ($diag -notmatch 'RESULT: all bundled resources found') { throw "diagnostics did not report all resources found" }
-          if ($diag -notmatch 'source   : bundled with SEAM')           { throw "adb was NOT resolved from the bundle (it fell back to PATH)" }
-          if ($diag -notmatch [regex]::Escape($appFull))                { throw "diagnostics did not report the app folder $appFull" }
+          $diag = Invoke-SeamCommand -Path $exe -ArgumentList '--diagnose'
+          Write-Host $diag.StdOut
+          if ($diag.StdErr) { Write-Host $diag.StdErr }
+          if ($diag.ExitCode -ne 0) { throw "--diagnose reported a problem (exit $($diag.ExitCode))" }
+          if ($diag.StdOut -notmatch 'RESULT: all bundled resources found') { throw "diagnostics did not report all resources found" }
+          if ($diag.StdOut -notmatch 'source   : bundled with SEAM')        { throw "adb was NOT resolved from the bundle (it fell back to PATH)" }
+          if ($diag.StdOut -notmatch [regex]::Escape($appFull))             { throw "diagnostics did not report the app folder $appFull" }
 
           Write-Host "`n--- --self-test (from the app folder) ---"
-          & $exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "app-folder self-test FAILED (exit $LASTEXITCODE)" }
+          $test = Invoke-SeamCommand -Path $exe -ArgumentList '--self-test'
+          Write-Host $test.StdOut
+          if ($test.StdErr) { Write-Host $test.StdErr }
+          if ($test.ExitCode -ne 0) { throw "app-folder self-test FAILED (exit $($test.ExitCode))" }
 
-          # CWD independence: run it from C:\ with an absolute path. A build that depended on
-          # the launch directory would fail this.
+          # CWD independence: run it from C:\ with an absolute path. A build that depended on the
+          # launch directory would fail this.
           Write-Host "`n--- --diagnose from C:\ (working-directory independence) ---"
-          Push-Location C:\
-          try {
-            $out = (& $exe --diagnose) -join "`n"
-            if ($LASTEXITCODE -ne 0) { throw "--diagnose failed when launched from C:\ (exit $LASTEXITCODE)" }
-          } finally { Pop-Location }
-          if ($out -notmatch [regex]::Escape($appFull)) { throw "resource resolution changed with the working directory" }
+          $rootRun = Invoke-SeamCommand -Path $exe -ArgumentList '--diagnose' -WorkingDirectory 'C:\'
+          if ($rootRun.ExitCode -ne 0) { throw "--diagnose failed when launched from C:\ (exit $($rootRun.ExitCode))" }
+          if ($rootRun.StdOut -notmatch [regex]::Escape($appFull)) { throw "resource resolution changed with the working directory" }
           Write-Host "still resolved: $appFull"
-
       - name: App folder - path with spaces and parentheses
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
+
           $spaced = 'build\verify spaces\SEAM Windows x64 (portable)'
           Remove-Item -Recurse -Force 'build\verify spaces' -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $spaced | Out-Null
@@ -275,19 +276,17 @@ jobs:
           $spacedFull = (Resolve-Path $spaced).Path
 
           $exe = Join-Path $spacedFull 'seam-host.exe'
-          $diag = (& $exe --diagnose) -join "`n"
-          if ($LASTEXITCODE -ne 0) { throw "--diagnose failed from a path with spaces (exit $LASTEXITCODE)" }
-          if ($diag -notmatch 'source   : bundled with SEAM') { throw "adb not resolved from the bundle in a spaced path" }
-          if ($diag -notmatch [regex]::Escape($spacedFull))   { throw "app dir not reported correctly for a spaced path" }
-          if ($diag -notmatch [regex]::Escape((Join-Path $spacedFull 'platform-tools\adb.exe'))) {
+          $diag = Invoke-SeamCommand -Path $exe -ArgumentList '--diagnose'
+          if ($diag.ExitCode -ne 0) { throw "--diagnose failed from a path with spaces (exit $($diag.ExitCode))" }
+          if ($diag.StdOut -notmatch 'source   : bundled with SEAM') { throw "adb not resolved from the bundle in a spaced path" }
+          if ($diag.StdOut -notmatch [regex]::Escape($spacedFull))   { throw "app dir not reported correctly for a spaced path" }
+          if ($diag.StdOut -notmatch [regex]::Escape((Join-Path $spacedFull 'platform-tools\adb.exe'))) {
             throw "adb path not resolved to the spaced folder"
           }
 
-          & $exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "self-test FAILED from a path with spaces (exit $LASTEXITCODE)" }
+          $test = Invoke-SeamCommand -Path $exe -ArgumentList '--self-test'
+          if ($test.ExitCode -ne 0) { throw "self-test FAILED from a path with spaces (exit $($test.ExitCode))" }
           Write-Host "spaced-path checks passed: $spacedFull"
-
-      # ---------------------------------------------------------------- portable ZIP
       - name: Build SEAM-Windows-x64.zip from the app folder
         id: pack
         shell: pwsh
@@ -374,12 +373,17 @@ jobs:
                        ForEach-Object { "$($_.Name)=$($_.Length)" }) -join ' '
           Write-Host "::notice title=SEAM-Windows-x64.zip manifest::$manifest"
 
-          Write-Host "`n--- run the packaged binary from the extracted folder ---"
-          & (Join-Path $verify 'seam-host.exe') --self-test
-          if ($LASTEXITCODE -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $LASTEXITCODE)" }
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
+          $zipExe = Join-Path $verify 'seam-host.exe'
 
-          & (Join-Path $verify 'seam-host.exe') --diagnose | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED --diagnose (exit $LASTEXITCODE)" }
+          Write-Host "`n--- run the packaged binary from the extracted folder ---"
+          $zipTest = Invoke-SeamCommand -Path $zipExe -ArgumentList '--self-test'
+          Write-Host (($zipTest.StdOut -split "`n" | Select-Object -Last 6) -join "`n")
+          if ($zipTest.ExitCode -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED its self-test (exit $($zipTest.ExitCode))" }
+
+          $zipDiag = Invoke-SeamCommand -Path $zipExe -ArgumentList '--diagnose'
+          if ($zipDiag.ExitCode -ne 0) { throw "the binary inside SEAM-Windows-x64.zip FAILED --diagnose (exit $($zipDiag.ExitCode))" }
+          if ($zipDiag.StdOut -notmatch 'source   : bundled with SEAM') { throw "the binary inside the ZIP did not use its bundled adb" }
 
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @(
             '',
@@ -548,23 +552,21 @@ jobs:
           }
 
           # ---- the installed app must find its own resources ----
+          . (Join-Path $PWD '.github\scripts\Invoke-SeamCommand.ps1')
+
           $exe  = Join-Path $target 'seam-host.exe'
           $full = (Resolve-Path $target).Path
-          Push-Location C:\Windows
-          try {
-            $diag = (& $exe --diagnose) -join "`n"
-            $code = $LASTEXITCODE
-          } finally { Pop-Location }
-          if ($code -ne 0) { throw "installed --diagnose failed (exit $code)" }
-          Write-Host $diag
-          if ($diag -notmatch 'RESULT: all bundled resources found') { throw "installed app did not find all resources" }
-          if ($diag -notmatch 'source   : bundled with SEAM')           { throw "installed app did not use its bundled adb" }
-          if ($diag -notmatch [regex]::Escape((Join-Path $full 'platform-tools\adb.exe'))) {
+          $diag = Invoke-SeamCommand -Path $exe -ArgumentList '--diagnose' -WorkingDirectory 'C:\Windows'
+          if ($diag.ExitCode -ne 0) { throw "installed --diagnose failed (exit $($diag.ExitCode))" }
+          Write-Host $diag.StdOut
+          if ($diag.StdOut -notmatch 'RESULT: all bundled resources found') { throw "installed app did not find all resources" }
+          if ($diag.StdOut -notmatch 'source   : bundled with SEAM')        { throw "installed app did not use its bundled adb" }
+          if ($diag.StdOut -notmatch [regex]::Escape((Join-Path $full 'platform-tools\adb.exe'))) {
             throw "installed app did not resolve adb inside the install folder"
           }
 
-          & $exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "installed self-test FAILED (exit $LASTEXITCODE)" }
+          $test = Invoke-SeamCommand -Path $exe -ArgumentList '--self-test' -WorkingDirectory 'C:\Windows'
+          if ($test.ExitCode -ne 0) { throw "installed self-test FAILED (exit $($test.ExitCode))" }
 
           # ---- Installed-apps registration ----
           $entry = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',

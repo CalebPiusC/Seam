@@ -39,8 +39,12 @@ namespace Seam.WindowsHost.Bootstrap
         private const string ReadyMarker = "SEAM_AGENT_READY";
         private const string WifiEndpointPrefix = "SEAM_WIFI_ENDPOINT:";
 
+        /// <summary>Upper bound for one adb invocation. adb is slow at worst by seconds.</summary>
+        private static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromSeconds(60);
+
         private readonly string _adbPath;
         private readonly string _localJarPath;
+        private bool _serverStarted;
 
         /// <summary>
         /// Both paths must be absolute and already discovered by <see cref="Host.AppLayout"/>.
@@ -244,6 +248,7 @@ namespace Seam.WindowsHost.Bootstrap
 
         private string Run(string[] args)
         {
+            if (NeedsServer(args)) EnsureServer();
             var (exitCode, stdout, stderr) = Execute(args);
             if (exitCode != 0)
             {
@@ -257,12 +262,55 @@ namespace Seam.WindowsHost.Bootstrap
         {
             try
             {
+                if (NeedsServer(args)) EnsureServer();
                 var (exitCode, stdout, _) = Execute(args);
                 return exitCode == 0 ? stdout : null;
             }
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Starts the adb server exactly once, deliberately WITHOUT capturing its output.
+        ///
+        /// Why: the first server-backed command (`adb devices`, `adb push`, `adb shell`, ...)
+        /// forks a long-lived adb daemon that inherits the client's stdout/stderr handles. If
+        /// those handles are pipes we then read to end-of-file, the daemon keeps the write end
+        /// open and the read never finishes, so the command looks hung forever - reproducible on
+        /// a freshly booted machine, intermittent afterwards. Starting the server with the
+        /// console as its std handles avoids that entirely, and every later capture is clean
+        /// because no second daemon is forked.
+        /// </summary>
+        public void EnsureServer()
+        {
+            if (_serverStarted) return;
+            try
+            {
+                Execute(new[] { "start-server" }, capture: false, timeout: TimeSpan.FromSeconds(30));
+            }
+            catch
+            {
+                // Best effort. If the server cannot start, the real command reports the problem
+                // with the device-specific guidance in Program.cs.
+            }
+            _serverStarted = true;
+        }
+
+        /// <summary>Commands that talk to a device (and therefore need the daemon) vs. pure client ones.</summary>
+        private static bool NeedsServer(string[] args)
+        {
+            if (args.Length == 0) return false;
+            switch (args[0].ToLowerInvariant())
+            {
+                case "version":
+                case "start-server":
+                case "kill-server":
+                case "help":
+                    return false;
+                default:
+                    return true;
             }
         }
 
@@ -294,8 +342,11 @@ namespace Seam.WindowsHost.Bootstrap
             return copy;
         }
 
-        private (int exitCode, string stdout, string stderr) Execute(string[] args)
+        private (int exitCode, string stdout, string stderr) Execute(
+            string[] args, bool capture = true, TimeSpan? timeout = null)
         {
+            TimeSpan limit = timeout ?? DefaultCommandTimeout;
+
             var psi = new ProcessStartInfo
             {
                 // Absolute executable path (never a bare name) and an explicit working directory:
@@ -303,8 +354,8 @@ namespace Seam.WindowsHost.Bootstrap
                 // change behaviour, and adb.exe finds AdbWinApi.dll next to itself.
                 FileName = _adbPath,
                 WorkingDirectory = System.IO.Path.GetDirectoryName(_adbPath) ?? Environment.CurrentDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
+                RedirectStandardOutput = capture,
+                RedirectStandardError = capture,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
@@ -318,11 +369,28 @@ namespace Seam.WindowsHost.Bootstrap
 
             // Drain both pipes concurrently: reading stdout to EOF first can deadlock when the
             // child fills the stderr buffer (classic redirected-stream deadlock).
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            process.WaitForExit();
-            Task.WaitAll(stdoutTask, stderrTask);
-            return (process.ExitCode, stdoutTask.Result, stderrTask.Result);
+            Task<string>? stdoutTask = capture ? process.StandardOutput.ReadToEndAsync() : null;
+            Task<string>? stderrTask = capture ? process.StandardError.ReadToEndAsync() : null;
+
+            // A hung adb must never hang SEAM: bound the invocation and kill the tree.
+            if (!process.WaitForExit((int)limit.TotalMilliseconds))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                throw new TimeoutException(
+                    $"'{System.IO.Path.GetFileName(_adbPath)} {string.Join(" ", Redact(args))}' did not " +
+                    $"finish within {limit.TotalSeconds:n0} s and was stopped. Unplug/replug the phone, run " +
+                    "platform-tools\\adb.exe kill-server, then try again.");
+            }
+
+            if (stdoutTask != null && stderrTask != null)
+            {
+                // Bounded: never wait for end-of-file on a handle a forked adb daemon may hold.
+                Task.WaitAll(new Task[] { stdoutTask, stderrTask }, TimeSpan.FromSeconds(10));
+            }
+
+            string stdout = stdoutTask != null && stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : string.Empty;
+            string stderr = stderrTask != null && stderrTask.IsCompletedSuccessfully ? stderrTask.Result : string.Empty;
+            return (process.ExitCode, stdout, stderr);
         }
     }
 }
