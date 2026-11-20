@@ -438,53 +438,101 @@ namespace Seam.WindowsHost.Gui
         {
             var card = new CardPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
 
-            _lblStateTitle.AutoSize = false;
-            _lblStateDetail.AutoSize = false;
-            _lblDeviceMeta.AutoSize = false;
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = Padding.Empty,
+                Padding = new Padding(22, 18, 22, 18)
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 352f));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            var text = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                ColumnCount = 1,
+                RowCount = 3,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            text.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            text.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));   // device name or state
+            text.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // what to do next
+            text.RowStyles.Add(new RowStyle(SizeType.Absolute, 20f));   // serial / endpoint
+
+            _lblStateTitle.Dock = DockStyle.Fill;
+            _lblStateTitle.Margin = Padding.Empty;
+            _lblStateDetail.Dock = DockStyle.Fill;
+            _lblStateDetail.Margin = new Padding(1, 2, 0, 0);
+            _lblDeviceMeta.Dock = DockStyle.Fill;
+            _lblDeviceMeta.Margin = Padding.Empty;
+
+            text.Controls.Add(_lblStateTitle, 0, 0);
+            text.Controls.Add(_lblStateDetail, 0, 1);
+            text.Controls.Add(_lblDeviceMeta, 0, 2);
+
+            // The buttons get their own column with a percent row above and below, so they sit
+            // in the middle without any width maths at paint time.
+            var buttons = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                ColumnCount = 1,
+                RowCount = 3,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+
+            var row = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                FlowDirection = FlowDirection.RightToLeft,
+                WrapContents = false,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
 
             _btnConnect.Kind = ButtonKind.Primary;
             _btnConnect.Text = "Connect";
+            _btnConnect.Height = 34;
+            _btnConnect.Width = 128;
+            _btnConnect.Margin = new Padding(8, 0, 0, 0);
+
             _btnDisconnect.Kind = ButtonKind.Secondary;
             _btnDisconnect.Text = "Disconnect";
+            _btnDisconnect.Height = 34;
+            _btnDisconnect.Width = 112;
+            _btnDisconnect.Margin = new Padding(8, 0, 0, 0);
+
             _btnRefresh.Kind = ButtonKind.Ghost;
             _btnRefresh.Text = "Refresh";
             _btnRefresh.Font = Theme.Small;
+            _btnRefresh.Height = 34;
+            _btnRefresh.Width = 84;
+            _btnRefresh.Margin = new Padding(0);
 
-            card.Controls.Add(_lblStateTitle);
-            card.Controls.Add(_lblStateDetail);
-            card.Controls.Add(_lblDeviceMeta);
-            card.Controls.Add(_btnConnect);
-            card.Controls.Add(_btnDisconnect);
-            card.Controls.Add(_btnRefresh);
+            // Right-to-left flow: the primary action ends up rightmost.
+            row.Controls.Add(_btnConnect);
+            row.Controls.Add(_btnDisconnect);
+            row.Controls.Add(_btnRefresh);
 
-            card.Resize += (_, _) =>
-            {
-                int textWidth = Math.Max(240, card.Width - 400);
-                _lblStateTitle.SetBounds(22, 30, textWidth, 30);
-                _lblStateDetail.SetBounds(23, 62, textWidth, 44);
-                _lblDeviceMeta.SetBounds(23, 108, textWidth, 18);
+            buttons.Controls.Add(row, 0, 1);
 
-                int right = card.Width - 22;
-                int y = Math.Max(20, (card.Height - 34) / 2);
-                right = Place(right, 88, y, _btnRefresh);
-                right = Place(right, 112, y, _btnDisconnect);
-                _ = Place(right, 128, y, _btnConnect);
-            };
+            root.Controls.Add(text, 0, 0);
+            root.Controls.Add(buttons, 1, 0);
+            card.Controls.Add(root);
 
             return card;
-        }
-
-        /// <summary>Right-aligns a button and moves the running edge left; hidden buttons are skipped.</summary>
-        private static int Place(int right, int width, int top, PillButton button)
-        {
-            if (!button.Visible)
-            {
-                return right;
-            }
-
-            int left = right - width;
-            button.SetBounds(left, top, width, 34);
-            return left - 8;
         }
 
         private Control BuildArrangementCard()
