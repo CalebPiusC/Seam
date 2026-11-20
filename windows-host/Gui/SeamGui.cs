@@ -128,6 +128,65 @@ namespace Seam.WindowsHost.Gui
             bitmap.Save(path, ImageFormat.Png);
             Console.WriteLine($"UI screenshot written: {path} ({bitmap.Width}x{bitmap.Height}, page {page})");
             DumpLayout(form, page);
+
+            if (page == GuiPage.Home)
+            {
+                // The Home page carries the whole visual system (rail, page, card, accent), so a
+                // coarse average-colour grid of that one bitmap is enough to prove the theme.
+                ProbePalette(bitmap);
+            }
+        }
+
+        /// <summary>
+        /// Averages the rendered pixels over a 12x8 grid and prints the colours. It is not a
+        /// screenshot substitute - it is the cheapest way to see, in a log, that the window drew
+        /// graphite surfaces and one accent instead of a white page.
+        /// </summary>
+        private static void ProbePalette(Bitmap bitmap)
+        {
+            const int cols = 12;
+            const int rows = 8;
+            var line = new System.Text.StringBuilder();
+
+            for (int gy = 0; gy < rows; gy++)
+            {
+                line.Clear();
+                for (int gx = 0; gx < cols; gx++)
+                {
+                    int x0 = bitmap.Width * gx / cols;
+                    int x1 = bitmap.Width * (gx + 1) / cols;
+                    int y0 = bitmap.Height * gy / rows;
+                    int y1 = bitmap.Height * (gy + 1) / rows;
+
+                    long red = 0, green = 0, blue = 0;
+                    int samples = 0;
+                    for (int y = y0; y < y1; y += 4)
+                    {
+                        for (int x = x0; x < x1; x += 4)
+                        {
+                            Color pixel = bitmap.GetPixel(x, y);
+                            red += pixel.R;
+                            green += pixel.G;
+                            blue += pixel.B;
+                            samples++;
+                        }
+                    }
+
+                    if (samples == 0)
+                    {
+                        line.Append("-------- ");
+                        continue;
+                    }
+
+                    line.Append('#')
+                        .Append((red / samples).ToString("X2"))
+                        .Append((green / samples).ToString("X2"))
+                        .Append((blue / samples).ToString("X2"))
+                        .Append(' ');
+                }
+
+                Console.WriteLine("[ui-palette] " + line.ToString().TrimEnd());
+            }
         }
 
         /// <summary>
