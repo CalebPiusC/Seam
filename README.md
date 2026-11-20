@@ -85,6 +85,14 @@ Move your Mac cursor past the edge of your display and it flows directly onto yo
 3. Unplug anytime: the background daemon keeps Wi-Fi (`TCP/UDP 27186`) ready for cable-free reconnection.
 4. *(Optional)* Grant **SEAM** permission in **System Settings → Privacy & Security → Accessibility** to enable global `CGEventTap` capture alongside the built-in non-activating panel fallback.
 
+### 3. Windows (preview, built from source)
+There is no Windows release yet, and the Windows host is a **prototype** — see
+[`windows-host/README.md`](windows-host/README.md) for exactly what has and has not been verified.
+It is compiled, self-tested and packaged by the **"Windows build" GitHub Actions workflow**
+(manual trigger → *Actions → Windows build → Run workflow* → download artifact
+`SEAM-Windows-x64`). The ZIP is self-contained (no .NET installation needed) and already contains
+the Android agent; `adb.exe` is installed with the bundled `Get-Adb.ps1` in one command.
+
 ### Controls & Shortcuts
 - **Edge Crossing:** Move your pointer past the side where you positioned your phone. Drag either tile inside the menu-bar popover to match your desk.
 - **Mac-Style Editing on Android:** `Cmd+C` / `Cmd+V` / `Cmd+X` / `Cmd+A` / `Cmd+Z`, `Cmd+Left/Right` (line start/end), `Cmd+Up/Down` (document top/bottom), `Opt+Left/Right` (word jump), `Opt+Backspace` (delete word).
