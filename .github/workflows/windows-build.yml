@@ -422,6 +422,13 @@ jobs:
           if (-not (Test-Path -LiteralPath $adb)) { throw "adb.exe was not restored" }
           Write-Host "repair run: adb.exe restored - OK"
 
+          # Publish what was actually installed, so the result is auditable without the log.
+          $ptDir     = Join-Path $pkg 'platform-tools'
+          $version   = (& $adb -version) -join ' | '
+          $adbBytes  = (Get-Item -LiteralPath $adb).Length
+          $fileCount = (Get-ChildItem -LiteralPath $ptDir -File).Count
+          Write-Host "::notice title=Get-Adb.ps1 verified on Windows PowerShell 5.1::$version ; adb.exe=$adbBytes bytes ; platform-tools files=$fileCount"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
