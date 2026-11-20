@@ -58,19 +58,22 @@ If you would rather bundle them, run the workflow with `bundle_adb = true`.
 ## 1. Honest status up front
 
 The authoring sandbox was **Linux with no .NET SDK, no JVM, no `adb` and no Android device**,
-and only npm/PyPI/GitHub were reachable, so no .NET toolchain could be installed
-(`nuget.org`, `dot.net` and Debian mirrors are blocked).
+so no local build was possible there. Compilation therefore happens on a GitHub Actions Windows
+runner (`.github/workflows/windows-build.yml`), which is a real `dotnet build` on real Windows —
+it is not a simulation, and it is also not a substitute for running the thing on your desk.
 
 | | State |
 |---|---|
 | Protocol / auth / framing design | **Verified by execution** — 33 conformance checks pass (`tools/verify_protocol.py`) against a device-side simulator transliterated from the shipped Java |
-| C# sources | **Not compiled.** No `dotnet build` has ever run on them. Structurally checked only (`tools/check_csharp_structure.py`, 10/10 files) |
-| Windows low-level hooks, `ClipCursor`, DPI | **Never executed** — no Windows machine available |
-| `adb` bootstrap, device discovery | **Never executed** — `adb` and a device were unavailable |
+| C# sources | **Compiled** — `dotnet build -c Release` on `windows-latest` (.NET 8), clean, 2026-11-20 ([run](https://github.com/CalebPiusC/Seam/actions/runs/44728342098)) |
+| `--self-test` | **Passes** — on the build output *and* on the published single-file exe, exit code 0 |
+| Packaging | **Produced** — self-contained single-file `win-x64`, `SEAM-Windows-x64.zip`, downloaded from the run's Artifacts |
+| Windows low-level hooks, `ClipCursor`, DPI | **Never executed** on interactive Windows — CI runs on a headless runner with no pointer |
+| `adb` bootstrap, device discovery | **Never executed** — the runner has `adb.exe` but there is no phone attached |
 | Real Android cursor movement | **Not demonstrated** — requires the above two rows |
 
-Do not read this as "the Windows host works". Read it as: *the protocol half is proven, the
-platform half is written and unproven.* The single command that would close most of the gap is
+Do not read this as "the Windows host works". Read it as: *the protocol half is proven, the code
+compiles and its offline self-test passes, and the platform half is still unexecuted.* The single command that would close most of the gap is
 `seam-host.exe --self-test` on real Windows; the second is `--trajectory` against a real phone.
 
 ---

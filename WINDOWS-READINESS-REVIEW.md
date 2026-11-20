@@ -2,8 +2,20 @@
 
 **Scope:** every file under `windows-host/` (10 C# files, 2,845 lines) plus the three verification
 tools. **No new features.** Only correctness and safety changes.
-**Date:** 2026-11-20 · **Branch:** `arena/a9a50776-seam` · **Status of `macos-host/` and
-`android-agent/`: untouched** (`git status` shows no modification to either tree).
+**Date:** 2026-11-20 · **Branch:** `arena/a9a50776-seam` ·
+**Status of `macos-host/` and `android-agent/`: untouched.**
+
+> **Update, same day — the compile question is now answered.** The project was built for real on
+> a GitHub Actions `windows-latest` runner with the .NET 8 SDK
+> ([run 44728342098](https://github.com/CalebPiusC/Seam/actions/runs/44728342098)):
+> `dotnet restore` → `dotnet build -c Release` → `seam-host.exe --self-test` → `dotnet publish
+> -r win-x64 --self-contained -p:PublishSingleFile=true` → self-test again on the published
+> binary → `SEAM-Windows-x64.zip`. **All steps passed on the first attempt**, so the nine fixes in
+> §3 were sufficient for a clean build and no compiler diagnostics were needed.
+>
+> Everything in §§4–6 about *runtime* behaviour on Windows, and §5.4 about the test oracle, still
+> stands unchanged: a green CI run says nothing about hooks, cursor pinning, DPI, ADB bootstrap or
+> a real phone. The procedure in §7 is still what to follow.
 
 ---
 
@@ -11,12 +23,12 @@ tools. **No new features.** Only correctness and safety changes.
 
 | Question | Honest answer |
 |---|---|
-| Does it compile? | **Unknown. It has never been compiled.** No .NET SDK is obtainable in this sandbox (§2). |
-| Does it run on Windows? | **Unknown. It has never run on Windows.** No Windows machine is available here. |
+| Does it compile? | **Yes.** `dotnet build -c Release` on GitHub's `windows-latest` with .NET 8: clean, all steps green ([run 44728342098](https://github.com/CalebPiusC/Seam/actions/runs/44728342098)). |
+| Does it run on Windows? | **Partly.** It runs headless on a Windows runner and its `--self-test` passes there, twice (build output and published single-file exe). The interactive paths — hooks, cursor pinning, DPI, adb bootstrap — have still never executed on a desktop with a pointer. |
 | Are the protocol constants right? | **Yes, now checked against the upstream Java itself** — 44/44 static parity checks (§5.2). |
 | Are the handshake golden vectors trustworthy? | **Yes** — reproduced by OpenSSL, which shares no code with the Java, the Python simulator, or the C# (§5.3). |
 | Are the 33 conformance checks a proof of Android compatibility? | **No.** They prove the C# client agrees with a Python fixture I wrote. See §5.4 for exactly where that can lie. |
-| Can the first *compile* signal be obtained without Windows? | **Yes.** `--self-test` touches no Win32 and no key file; `net8.0` builds anywhere. Install the .NET 8 SDK on the macOS workstation and run §7 Gate 1 today. |
+| Can the *compile* signal be obtained without a local SDK? | **Yes, and it was.** GitHub Actions does it; the developer installs nothing (§7 Gate 1 is now served by CI). |
 | Is it ready for a first real-device test? | **After §8.** Nine defects were fixed in this pass; three of them would have made the first test fail or mislead badly. |
 
 ---
