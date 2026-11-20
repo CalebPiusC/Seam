@@ -63,15 +63,11 @@ If you would rather bundle them, run the workflow with `bundle_adb = true`.
 
 | | |
 |---|---|
-| Run | [44729623831](https://github.com/CalebPiusC/Seam/actions/runs/44729623831) — every step green, 1 m 35 s, no warnings |
-| Artifact | `SEAM-Windows-x64.zip` — **30,005,433 bytes** (28.6 MiB) |
-| SHA-256 | `6c617bcf457f2b7bd22d8d214a3ee04f6a65f6aa07ed1312c3d54f3837be2003` |
-| `seam-host.exe` | 35,131,091 bytes — self-contained single file, .NET 8 win-x64 |
-| `seam-agent.jar` | 32,148 bytes — same size class as the jar the macOS build produces |
-| Verified by CI | ZIP expands, contains exactly the 8 expected files, and the **binary extracted from the ZIP passes `--self-test`** |
-
-Sizes shift slightly between runs (embedding timestamps), so treat these as the record for that run
-rather than constants; every ZIP carries its own `BUILD-INFO.txt`.
+| Run | [Windows build](https://github.com/CalebPiusC/Seam/actions/workflows/windows-build.yml) — every step green |
+| Shape | **flat archive**: the 8 files sit at the ZIP root, so Explorer's *Extract All* yields one `SEAM-Windows-x64` folder, not two nested ones |
+| Verified by CI | the ZIP expands to exactly the 8 expected files (a nested `SEAM-Windows-x64/` folder now fails the build), the **binary extracted from the ZIP passes `--self-test`**, and `Get-Adb.ps1` parses and runs under real **Windows PowerShell 5.1** (fresh install, already-installed no-op, and repair after `adb.exe` is deleted) |
+| Sizes / hashes | recorded per build in `BUILD-INFO.txt` inside the ZIP and in the run's summary — they change with every run (embedded timestamps), so they are not pinned here |
+| Reference numbers | `seam-host.exe` ~35.1 MB self-contained single file · `seam-agent.jar` 32,148 bytes · ZIP ~28.6 MiB |
 
 ---
 
