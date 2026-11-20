@@ -116,6 +116,8 @@ namespace Seam.WindowsHost.Gui
             ApplyState(_session.State, _session.Detail);
             ApplyDevices(_session.Devices);
             AppendLog("SEAM " + Host.DiagnosticsReport.VersionString + " ready.", LogLevel.Good);
+            AppendLog($"Display: {DeviceDpi} dpi, layout scaled {AutoScaleFactor.Width:0.##}x " +
+                      $"(window {Width}x{Height}, rail 216, text {Theme.TextFamily}).", LogLevel.Info);
 
             if (_interactive)
             {
@@ -227,7 +229,7 @@ namespace Seam.WindowsHost.Gui
                 Padding = Padding.Empty
             };
             rail.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            rail.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));  // identity
+            rail.RowStyles.Add(new RowStyle(SizeType.Absolute, 96f));  // identity
             rail.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // navigation
             rail.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));  // connection status
             rail.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));  // version
@@ -262,19 +264,27 @@ namespace Seam.WindowsHost.Gui
 
         private Control BuildRailIdentity()
         {
-            var identity = new BufferedPanel
+            var identity = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Theme.NavBackground,
-                Margin = Padding.Empty
+                ColumnCount = 2,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = new Padding(20, 20, 14, 8)
             };
+            identity.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36f));
+            identity.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            identity.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+            identity.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             var logo = new PictureBox
             {
-                Location = new Point(20, 26),
-                Size = new Size(30, 30),
+                Size = new Size(28, 28),
                 SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 1, 8, 0)
             };
             try
             {
@@ -290,15 +300,17 @@ namespace Seam.WindowsHost.Gui
             }
 
             var wordmark = Theme.MakeLabel("SEAM", Theme.Title, Theme.TextPrimary, ContentAlignment.MiddleLeft);
-            wordmark.SetBounds(58, 24, 140, 24);
+            wordmark.AutoSize = true;
+            wordmark.Margin = new Padding(0, 0, 0, 0);
 
-            var tagline = Theme.MakeLabel("Mouse & keyboard sharing", Theme.Caption, Theme.TextTertiary, ContentAlignment.MiddleLeft);
+            var tagline = Theme.MakeLabel("Mouse & keyboard sharing", Theme.Caption, Theme.TextTertiary, ContentAlignment.TopLeft);
+            tagline.AutoSize = true;
             tagline.AutoEllipsis = true;
-            tagline.SetBounds(59, 47, 142, 20);
+            tagline.Margin = new Padding(1, 2, 0, 0);
 
-            identity.Controls.Add(logo);
-            identity.Controls.Add(wordmark);
-            identity.Controls.Add(tagline);
+            identity.Controls.Add(logo, 0, 0);
+            identity.Controls.Add(wordmark, 1, 0);
+            identity.Controls.Add(tagline, 1, 1);
             return identity;
         }
 
@@ -361,31 +373,53 @@ namespace Seam.WindowsHost.Gui
 
         internal GuiPage CurrentPage => _nav.Selected;
 
-        /// <summary>Builds the title/description block every page starts with.</summary>
+        /// <summary>
+        /// Builds the title/description block every page starts with. The block measures itself
+        /// (AutoSize rows, AutoSize labels) so it can never clip its own text at a different DPI
+        /// or with a longer translation - the failure the 125% screenshot showed on Home.
+        /// </summary>
         private static TableLayoutPanel PageHeader(string title, string description, out FlowLayoutPanel actions)
         {
             var header = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 BackColor = Theme.Background,
                 ColumnCount = 2,
                 RowCount = 1,
                 Margin = Padding.Empty,
-                Padding = new Padding(28, 22, 28, 10)
+                Padding = new Padding(28, 20, 28, 12)
             };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            header.RowStyles.Add(new RowStyle(SizeType.Absolute, 58f));
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var text = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Margin = Padding.Empty };
+            var text = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = Theme.Background,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            text.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            text.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            text.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
             var titleLabel = Theme.MakeLabel(title, Theme.PageTitle, Theme.TextPrimary, ContentAlignment.MiddleLeft);
-            titleLabel.AutoEllipsis = true;
-            titleLabel.SetBounds(0, 0, 520, 34);
+            titleLabel.AutoSize = true;
+            titleLabel.Margin = new Padding(0, 0, 0, 2);
+
             var descriptionLabel = Theme.MakeLabel(description, Theme.Small, Theme.TextSecondary, ContentAlignment.MiddleLeft);
-            descriptionLabel.AutoEllipsis = true;
-            descriptionLabel.SetBounds(1, 34, 620, 22);
-            text.Controls.Add(titleLabel);
-            text.Controls.Add(descriptionLabel);
+            descriptionLabel.AutoSize = true;
+            descriptionLabel.Margin = Padding.Empty;
+
+            text.Controls.Add(titleLabel, 0, 0);
+            text.Controls.Add(descriptionLabel, 0, 1);
 
             actions = new FlowLayoutPanel
             {
@@ -396,7 +430,7 @@ namespace Seam.WindowsHost.Gui
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 BackColor = Theme.Background,
                 Margin = Padding.Empty,
-                Padding = new Padding(0, 12, 0, 0)
+                Padding = new Padding(12, 6, 0, 0)
             };
 
             header.Controls.Add(text, 0, 0);
@@ -417,7 +451,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Home
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             page.Controls.Add(PageHeader("Home", "Share one mouse and keyboard with your Android phone.", out _), 0, 0);
@@ -490,16 +524,20 @@ namespace Seam.WindowsHost.Gui
                 Padding = Padding.Empty
             };
             text.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            text.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));   // device name or state
+            text.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // device name or state
             text.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // what to do next
-            text.RowStyles.Add(new RowStyle(SizeType.Absolute, 20f));   // serial / endpoint
+            text.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // serial / endpoint
 
-            _lblStateTitle.Dock = DockStyle.Fill;
-            _lblStateTitle.Margin = Padding.Empty;
+            // The two single-line labels measure themselves; only the sentence in the middle is
+            // allowed to wrap, so no text can be cut off by a fixed row height.
+            _lblStateTitle.Dock = DockStyle.None;
+            _lblStateTitle.AutoSize = true;
+            _lblStateTitle.Margin = new Padding(0, 0, 0, 2);
             _lblStateDetail.Dock = DockStyle.Fill;
-            _lblStateDetail.Margin = new Padding(1, 2, 0, 0);
-            _lblDeviceMeta.Dock = DockStyle.Fill;
-            _lblDeviceMeta.Margin = Padding.Empty;
+            _lblStateDetail.Margin = new Padding(1, 2, 0, 2);
+            _lblDeviceMeta.Dock = DockStyle.None;
+            _lblDeviceMeta.AutoSize = true;
+            _lblDeviceMeta.Margin = new Padding(0);
 
             text.Controls.Add(_lblStateTitle, 0, 0);
             text.Controls.Add(_lblStateDetail, 0, 1);
@@ -648,7 +686,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Activity
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             Control header = PageHeader("Activity", "Everything SEAM did this session, newest at the bottom.", out FlowLayoutPanel actions);
@@ -713,7 +751,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Settings
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             page.Controls.Add(PageHeader("Settings", "Preferences are stored next to the application and apply to this PC.", out _), 0, 0);
@@ -939,7 +977,7 @@ namespace Seam.WindowsHost.Gui
                 Tag = GuiPage.Diagnostics
             };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             page.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             Control header = PageHeader("Diagnostics",
