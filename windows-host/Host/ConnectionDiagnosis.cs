@@ -120,17 +120,19 @@ namespace Seam.WindowsHost.Host
                 return ConnectionProblem.AgentClosed;
             }
 
-            if (message.Contains("not paired", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("pairing", StringComparison.OrdinalIgnoreCase))
-            {
-                return ConnectionProblem.PairingRequired;
-            }
-
             if (message.Contains("handshake", StringComparison.OrdinalIgnoreCase) ||
                 message.Contains("auth", StringComparison.OrdinalIgnoreCase) ||
                 message.Contains("HMAC", StringComparison.OrdinalIgnoreCase))
             {
                 return ConnectionProblem.HandshakeFailed;
+            }
+
+            // Narrow on purpose: "the pairing keys do not match" must stay a handshake problem.
+            if (message.Contains("not paired", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("pairing code", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("_adb-tls-pairing", StringComparison.OrdinalIgnoreCase))
+            {
+                return ConnectionProblem.PairingRequired;
             }
 
             if (message.Contains("no longer visible to adb", StringComparison.OrdinalIgnoreCase))
@@ -165,10 +167,6 @@ namespace Seam.WindowsHost.Host
             ConnectionProblem.AgentClosed => "The phone closed the connection",
             ConnectionProblem.HandshakeFailed => "The pairing keys do not match",
             ConnectionProblem.PairingRequired => "Waiting for the first wireless pairing",
-            ConnectionProblem.PairingRequired =>
-                "Wireless debugging is advertising this phone, but Android has not paired it with " +
-                "this PC yet. Pair once with the code the phone shows; SEAM reconnects on its own afterwards.",
-
             ConnectionProblem.TransportError => "The connection did not succeed",
             _ => string.Empty
         };
@@ -211,8 +209,7 @@ namespace Seam.WindowsHost.Host
 
             ConnectionProblem.PairingRequired =>
                 "Wireless debugging is advertising this phone, but Android has not paired it with " +
-                "this PC yet. Pair once: on the phone open Wireless debugging, tap \"Pair device with " +
-                "pairing code\", then enter the code with the bundled adb. After that SEAM reconnects on its own.",
+                "this PC yet. Pair once with the code the phone shows; SEAM reconnects on its own afterwards.",
 
             ConnectionProblem.TransportError =>
                 "Check the cable and the phone's USB mode (file transfer), then press Connect. " +
@@ -232,13 +229,8 @@ namespace Seam.WindowsHost.Host
             ConnectionProblem.AgentNotReady => "unplug and re-plug the cable, then press Connect.",
             ConnectionProblem.AgentClosed => "SEAM restarted the phone's agent - press Connect again.",
             ConnectionProblem.HandshakeFailed => "press Connect again so the agent is reinstalled.",
-            ConnectionProblem.PairingRequired =>
-                "Wireless debugging is advertising this phone, but Android has not paired it with " +
-                "this PC yet. Pair once: on the phone open Wireless debugging, tap \"Pair device with " +
-                "pairing code\", then enter the code with the bundled adb. After that SEAM reconnects on its own.",
-
-            ConnectionProblem.TransportError => "check the cable, then press Connect. Details are in Activity.",
             ConnectionProblem.PairingRequired => "pair once with the code the phone shows; SEAM reconnects after that.",
+            ConnectionProblem.TransportError => "check the cable, then press Connect. Details are in Activity.",
             _ => string.Empty
         };
 
