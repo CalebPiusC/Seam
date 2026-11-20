@@ -424,10 +424,14 @@ jobs:
 
           # Publish what was actually installed, so the result is auditable without the log.
           $ptDir     = Join-Path $pkg 'platform-tools'
-          $version   = (& $adb -version) -join ' | '
+          $version   = (& $adb version) -join ' | '   # 'adb version', not 'adb -version'
+          if ($LASTEXITCODE -ne 0) { throw "'adb version' failed with exit code $LASTEXITCODE" }
           $adbBytes  = (Get-Item -LiteralPath $adb).Length
           $fileCount = (Get-ChildItem -LiteralPath $ptDir -File).Count
           Write-Host "::notice title=Get-Adb.ps1 verified on Windows PowerShell 5.1::$version ; adb.exe=$adbBytes bytes ; platform-tools files=$fileCount"
+
+          # Do not let a native command's exit code leak into the step result.
+          exit 0
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
