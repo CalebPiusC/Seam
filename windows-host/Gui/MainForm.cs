@@ -99,6 +99,7 @@ namespace Seam.WindowsHost.Gui
             MinimumSize = new Size(940, 640);
             DoubleBuffered = true;
             ApplyIcon();
+            DarkTitleBar.Apply(this);
 
             BuildUi();
             NameControls();
