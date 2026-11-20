@@ -79,7 +79,10 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; Everything the app needs, including platform-tools\adb.exe and seam-agent.jar.
 ; recursesubdirs keeps the published runtime folders intact.
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; restartreplace: if a running adb server (or any other process) still holds one of these
+; files, Inno renames it aside and finishes the install, scheduling the old copy for
+; deletion at the next restart - instead of aborting with "DeleteFile failed; code 5".
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
 
 [Icons]
 ; The exe is a GUI-subsystem binary, so these launch the desktop window with no console.
@@ -100,6 +103,21 @@ Filename: "{app}\README-WINDOWS.txt"; Description: "Open the SEAM quick start gu
 ; which is only deleted when the user explicitly says yes (see [Code] below).
 
 [Code]
+{ Windows refuses to delete or replace a running image: "DeleteFile failed; code 5"
+  on platform-tools\adb.exe means the adb server started from the installed copy is still
+  alive (it outlives the SEAM window). Stop it before any file is copied. restartreplace
+  on [Files] is the backstop for anything else that still holds a file. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AdbExe: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  AdbExe := ExpandConstant('{app}\platform-tools\adb.exe');
+  if FileExists(AdbExe) then
+    Exec(AdbExe, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 { Keep the pairing key on upgrade and on normal uninstall; offer to remove it explicitly. }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var

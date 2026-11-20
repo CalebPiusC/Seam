@@ -85,6 +85,19 @@ adb (the three commands are in `MANUAL-VERIFICATION.md` §2.7), press **Refresh*
 
 ## Troubleshooting
 
+**Setup stops with "DeleteFile failed; code 5. Access is denied." on
+`platform-tools\adb.exe`.** Windows will not replace a running program, and the adb server
+SEAM starts keeps that exact file open even after the SEAM window is closed. Close SEAM, then
+in an Administrator Command Prompt:
+
+```
+"C:\Program Files\SEAM\platform-tools\adb.exe" kill-server
+```
+
+Re-run Setup. If it still refuses, reboot and install before starting SEAM. Setup now stops
+the adb server itself before copying files and schedules any file that is still locked for
+replacement at the next restart, so an upgrade should not hit this.
+
 Start here — it prints what was found and where:
 
 ```
